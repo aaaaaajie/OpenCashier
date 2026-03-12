@@ -1,6 +1,54 @@
-import { Card, Col, Form, Input, Row, Select, Space, Typography } from "antd";
+import { useEffect, useState } from "react";
+import {
+  Card,
+  Col,
+  Form,
+  Input,
+  Row,
+  Select,
+  Space,
+  Table,
+  Tag,
+  Typography
+} from "antd";
 
 export function SettingsPage() {
+  const [providers, setProviders] = useState<
+    Array<{
+      providerCode: string;
+      displayName: string;
+      integrationMode: string;
+      officialSdkPackage?: string;
+      enabled: boolean;
+    }>
+  >([]);
+
+  useEffect(() => {
+    const apiBaseUrl =
+      import.meta.env.VITE_API_BASE_URL ?? "http://localhost:3000/api/v1";
+
+    async function loadProviders() {
+      try {
+        const response = await fetch(`${apiBaseUrl}/admin/channels`);
+        const json = (await response.json()) as {
+          data: Array<{
+            providerCode: string;
+            displayName: string;
+            integrationMode: string;
+            officialSdkPackage?: string;
+            enabled: boolean;
+          }>;
+        };
+
+        setProviders(json.data);
+      } catch {
+        setProviders([]);
+      }
+    }
+
+    void loadProviders();
+  }, []);
+
   return (
     <Space direction="vertical" size={16} style={{ width: "100%" }}>
       <Card className="page-card">
@@ -53,7 +101,39 @@ export function SettingsPage() {
           </Card>
         </Col>
       </Row>
+      <Card title="渠道接入策略">
+        <Table
+          rowKey="providerCode"
+          pagination={false}
+          dataSource={providers}
+          columns={[
+            { title: "平台", dataIndex: "displayName" },
+            {
+              title: "策略",
+              dataIndex: "integrationMode",
+              render: (value: string) => (
+                <Tag color={value === "OFFICIAL_NODE_SDK" ? "processing" : "gold"}>
+                  {value}
+                </Tag>
+              )
+            },
+            {
+              title: "官方 SDK 包",
+              dataIndex: "officialSdkPackage",
+              render: (value?: string) => value ?? "无，走 API"
+            },
+            {
+              title: "配置状态",
+              dataIndex: "enabled",
+              render: (value: boolean) => (
+                <Tag color={value ? "green" : "default"}>
+                  {value ? "已配置" : "待配置"}
+                </Tag>
+              )
+            }
+          ]}
+        />
+      </Card>
     </Space>
   );
 }
-

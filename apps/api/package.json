@@ -12,6 +12,7 @@
     "prisma:studio": "prisma studio --schema prisma/schema.prisma"
   },
   "dependencies": {
+    "alipay-sdk": "^4.3.0",
     "@nestjs/common": "^11.1.6",
     "@nestjs/config": "^4.0.2",
     "@nestjs/core": "^11.1.6",
@@ -36,4 +37,3 @@
     "typescript": "^5.8.3"
   }
 }
-

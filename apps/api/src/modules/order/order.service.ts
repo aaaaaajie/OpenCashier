@@ -1,13 +1,21 @@
 import { Injectable } from "@nestjs/common";
+import { PaymentChannelRegistryService } from "../payment/channels/payment-channel-registry.service";
 import { PaymentStoreService } from "../payment/payment-store.service";
 import { CreateOrderDto } from "./dto/create-order.dto";
 
 @Injectable()
 export class OrderService {
-  constructor(private readonly paymentStoreService: PaymentStoreService) {}
+  constructor(
+    private readonly paymentStoreService: PaymentStoreService,
+    private readonly paymentChannelRegistryService: PaymentChannelRegistryService
+  ) {}
 
-  createOrder(appId: string, input: CreateOrderDto) {
-    const record = this.paymentStoreService.createOrder({
+  async createOrder(appId: string, input: CreateOrderDto) {
+    if (input.allowedChannels?.length) {
+      this.paymentChannelRegistryService.validateChannels(input.allowedChannels);
+    }
+
+    const record = await this.paymentStoreService.createOrder({
       appId,
       merchantOrderNo: input.merchantOrderNo,
       amount: input.amount,
@@ -17,7 +25,7 @@ export class OrderService {
       notifyUrl: input.notifyUrl,
       returnUrl: input.returnUrl,
       expireInSeconds: input.expireInSeconds ?? 900,
-      allowedChannels: input.allowedChannels ?? ["wechat_qr", "alipay_qr"],
+      allowedChannels: input.allowedChannels,
       metadata: input.metadata
     });
 
@@ -26,7 +34,10 @@ export class OrderService {
       merchantOrderNo: record.merchantOrderNo,
       status: record.status,
       cashierUrl: record.cashierUrl,
-      expireTime: record.expireTime
+      expireTime: record.expireTime,
+      channels: this.paymentChannelRegistryService.listCatalogByChannels(
+        record.allowedChannels
+      )
     };
   }
 
@@ -49,4 +60,3 @@ export class OrderService {
     return this.paymentStoreService.closeOrder(platformOrderNo);
   }
 }
-

@@ -2,11 +2,24 @@ import {
   BadRequestException,
   ConflictException,
   Injectable,
-  NotFoundException
+  NotFoundException,
+  OnModuleInit
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
+import {
+  BusinessType,
+  MerchantStatus as PrismaMerchantStatus,
+  OrderStatus as PrismaOrderStatus,
+  type PayOrder,
+  Prisma,
+  RefundStatus as PrismaRefundStatus,
+  SignType as PrismaSignType
+} from "@prisma/client";
+import { PrismaService } from "../../prisma/prisma.service";
+import { PaymentChannelRegistryService } from "./channels/payment-channel-registry.service";
+import { PaymentAttemptService } from "./payment-attempt.service";
 
-type OrderStatus =
+type OrderStatusValue =
   | "WAIT_PAY"
   | "PAYING"
   | "SUCCESS"
@@ -15,7 +28,12 @@ type OrderStatus =
   | "REFUND_PART"
   | "REFUND_ALL";
 
-type RefundStatus = "CREATED" | "PROCESSING" | "SUCCESS" | "FAILED" | "CLOSED";
+type RefundStatusValue =
+  | "CREATED"
+  | "PROCESSING"
+  | "SUCCESS"
+  | "FAILED"
+  | "CLOSED";
 
 interface CreateOrderInput {
   appId: string;
@@ -27,7 +45,7 @@ interface CreateOrderInput {
   notifyUrl: string;
   returnUrl?: string;
   expireInSeconds: number;
-  allowedChannels: string[];
+  allowedChannels?: string[];
   metadata?: Record<string, unknown>;
 }
 
@@ -48,7 +66,7 @@ export interface OrderRecord {
   currency: string;
   subject: string;
   description?: string;
-  status: OrderStatus;
+  status: OrderStatusValue;
   channel: string | null;
   notifyUrl: string;
   returnUrl?: string;
@@ -66,292 +84,1018 @@ export interface RefundRecord {
   platformRefundNo: string;
   platformOrderNo: string;
   refundAmount: number;
-  status: RefundStatus;
+  status: RefundStatusValue;
   reason: string;
   createdAt: string;
   successTime: string | null;
 }
 
+const DEFAULT_ALLOWED_CHANNELS = ["wechat_qr", "alipay_qr", "alipay_wap"];
+const REFUNDABLE_ORDER_STATUSES: PrismaOrderStatus[] = [
+  PrismaOrderStatus.SUCCESS,
+  PrismaOrderStatus.REFUND_PART,
+  PrismaOrderStatus.REFUND_ALL
+];
+const ACTIVE_REFUND_STATUSES: PrismaRefundStatus[] = [
+  PrismaRefundStatus.CREATED,
+  PrismaRefundStatus.PROCESSING,
+  PrismaRefundStatus.SUCCESS
+];
+
 @Injectable()
-export class PaymentStoreService {
-  private readonly orders = new Map<string, OrderRecord>();
-  private readonly refunds = new Map<string, RefundRecord>();
-  private readonly orderKeyIndex = new Map<string, string>();
-  private readonly refundKeyIndex = new Map<string, string>();
-  private readonly merchantApps = [
-    {
-      appId: "demo_app",
-      appName: "演示商户应用",
-      status: "ACTIVE",
-      signType: "HMAC-SHA256",
-      allowedChannels: ["wechat_qr", "alipay_qr"]
-    },
-    {
-      appId: "partner_app",
-      appName: "渠道联调应用",
-      status: "ACTIVE",
-      signType: "RSA2",
-      allowedChannels: ["wechat_qr"]
-    }
-  ];
+export class PaymentStoreService implements OnModuleInit {
+  constructor(
+    private readonly prismaService: PrismaService,
+    private readonly configService: ConfigService,
+    private readonly paymentChannelRegistryService: PaymentChannelRegistryService,
+    private readonly paymentAttemptService: PaymentAttemptService
+  ) {}
 
-  constructor(private readonly configService: ConfigService) {
-    const sampleOrder = this.createOrder({
-      appId: "demo_app",
-      merchantOrderNo: "ORDER_DEMO_10001",
-      amount: 9900,
-      currency: "CNY",
-      subject: "VIP会员",
-      description: "首个演示订单",
-      notifyUrl: "https://merchant.example.com/pay/notify",
-      returnUrl: "https://merchant.example.com/pay/result",
-      expireInSeconds: 900,
-      allowedChannels: ["wechat_qr", "alipay_qr"],
-      metadata: {
-        scene: "demo"
-      }
-    });
-
-    sampleOrder.status = "SUCCESS";
-    sampleOrder.paidAmount = sampleOrder.amount;
-    sampleOrder.channel = "wechat_qr";
-    sampleOrder.paidTime = new Date().toISOString();
-
-    const sampleRefund = this.createRefund({
-      appId: "demo_app",
-      platformOrderNo: sampleOrder.platformOrderNo,
-      merchantRefundNo: "REFUND_DEMO_10001",
-      refundAmount: 3000,
-      reason: "演示部分退款"
-    });
-
-    sampleRefund.status = "SUCCESS";
-    sampleRefund.successTime = new Date().toISOString();
+  async onModuleInit(): Promise<void> {
+    await this.ensureDemoData();
   }
 
-  listMerchantApps(): Array<{
+  async listMerchantApps(): Promise<Array<{
     appId: string;
     appName: string;
     status: string;
     signType: string;
     allowedChannels: string[];
-  }> {
-    return this.merchantApps;
+  }>> {
+    const merchantApps = await this.prismaService.merchantApp.findMany({
+      orderBy: { createdAt: "desc" }
+    });
+
+    return merchantApps.map((app) => ({
+      appId: app.appId,
+      appName: app.appName,
+      status: app.status,
+      signType: this.toApiSignType(app.signType),
+      allowedChannels: app.allowedChannels
+    }));
   }
 
-  createOrder(input: CreateOrderInput): OrderRecord {
-    const merchantKey = `${input.appId}:${input.merchantOrderNo}`;
-    const existingPlatformOrderNo = this.orderKeyIndex.get(merchantKey);
+  async createOrder(input: CreateOrderInput): Promise<OrderRecord> {
+    const merchantApp = await this.getActiveMerchantApp(input.appId);
+    const allowedChannels = this.resolveAllowedChannels(
+      merchantApp.allowedChannels,
+      input.allowedChannels
+    );
 
-    if (existingPlatformOrderNo) {
-      const existing = this.orders.get(existingPlatformOrderNo);
-
-      if (!existing) {
-        throw new NotFoundException("Existing order index is broken");
+    this.paymentChannelRegistryService.validateChannels(allowedChannels);
+    const orderUniqueWhere = {
+      appId_merchantOrderNo: {
+        appId: input.appId,
+        merchantOrderNo: input.merchantOrderNo
       }
+    } as const;
+    const existing = await this.prismaService.payOrder.findUnique({
+      where: orderUniqueWhere
+    });
 
-      const isSameRequest =
-        existing.amount === input.amount &&
-        existing.currency === input.currency &&
-        existing.subject === input.subject &&
-        existing.notifyUrl === input.notifyUrl;
+    if (existing) {
+      this.assertSameOrderRequest(existing, {
+        ...input,
+        allowedChannels
+      });
 
-      if (!isSameRequest) {
-        throw new ConflictException(
-          "merchant_order_no already exists with different parameters"
-        );
-      }
-
-      return existing;
+      return this.toOrderRecord(existing);
     }
 
     const now = new Date();
     const expireTime = new Date(now.getTime() + input.expireInSeconds * 1000);
-    const platformOrderNo = this.generateCode("P");
-    const cashierUrl = `${this.configService.get<string>("WEB_BASE_URL") ?? "http://localhost:5173"}/cashier/${platformOrderNo}`;
 
-    const record: OrderRecord = {
-      appId: input.appId,
+    try {
+      const created = await this.prismaService.payOrder.create({
+        data: {
+          merchantId: merchantApp.merchantId,
+          appId: input.appId,
+          platformOrderNo: this.generateCode("P"),
+          merchantOrderNo: input.merchantOrderNo,
+          amount: input.amount,
+          currency: input.currency,
+          subject: input.subject,
+          description: input.description,
+          status: PrismaOrderStatus.WAIT_PAY,
+          notifyUrl: input.notifyUrl,
+          returnUrl: input.returnUrl,
+          allowedChannels,
+          expireTime,
+          metadata: input.metadata
+            ? (input.metadata as Prisma.InputJsonValue)
+            : undefined
+        }
+      });
+
+      return this.toOrderRecord(created);
+    } catch (error) {
+      if (!this.isUniqueConstraintError(error)) {
+        throw error;
+      }
+
+      const conflicted = await this.prismaService.payOrder.findUnique({
+        where: orderUniqueWhere
+      });
+
+      if (!conflicted) {
+        throw error;
+      }
+
+      this.assertSameOrderRequest(conflicted, {
+        ...input,
+        allowedChannels
+      });
+
+      return this.toOrderRecord(conflicted);
+    }
+  }
+
+  async getOrderByPlatformOrderNo(platformOrderNo: string): Promise<OrderRecord> {
+    await this.markExpiredOrders();
+
+    const existingOrder = await this.prismaService.payOrder.findUnique({
+      where: { platformOrderNo }
+    });
+
+    if (!existingOrder) {
+      throw new NotFoundException("Order not found");
+    }
+
+    let order: PayOrder = existingOrder;
+    order = await this.syncOrderIfNeeded(order);
+
+    return this.toOrderRecord(order);
+  }
+
+  async getOrderByMerchantOrderNo(
+    appId: string,
+    merchantOrderNo: string
+  ): Promise<OrderRecord> {
+    await this.markExpiredOrders();
+
+    const existingOrder = await this.prismaService.payOrder.findUnique({
+      where: {
+        appId_merchantOrderNo: {
+          appId,
+          merchantOrderNo
+        }
+      }
+    });
+
+    if (!existingOrder) {
+      throw new NotFoundException("Order not found");
+    }
+
+    let order: PayOrder = existingOrder;
+    order = await this.syncOrderIfNeeded(order);
+
+    return this.toOrderRecord(order);
+  }
+
+  async listOrders(): Promise<OrderRecord[]> {
+    await this.markExpiredOrders();
+
+    const orders = await this.prismaService.payOrder.findMany({
+      orderBy: { createdAt: "desc" }
+    });
+
+    return orders.map((order) => this.toOrderRecord(order));
+  }
+
+  async closeOrder(platformOrderNo: string): Promise<OrderRecord> {
+    await this.markExpiredOrders();
+
+    const existingOrder = await this.prismaService.payOrder.findUnique({
+      where: { platformOrderNo }
+    });
+
+    if (!existingOrder) {
+      throw new NotFoundException("Order not found");
+    }
+
+    let order: PayOrder = existingOrder;
+    order = await this.syncOrderIfNeeded(order);
+
+    if (
+      order.status === PrismaOrderStatus.SUCCESS ||
+      order.status === PrismaOrderStatus.REFUND_PART ||
+      order.status === PrismaOrderStatus.REFUND_ALL ||
+      order.status === PrismaOrderStatus.CLOSED ||
+      order.status === PrismaOrderStatus.EXPIRED
+    ) {
+      return this.toOrderRecord(order);
+    }
+
+    const latestAttempt = await this.paymentAttemptService.findLatestAttemptForOrder(
       platformOrderNo,
-      merchantOrderNo: input.merchantOrderNo,
-      amount: input.amount,
-      paidAmount: 0,
-      currency: input.currency,
-      subject: input.subject,
-      description: input.description,
-      status: "WAIT_PAY",
-      channel: null,
-      notifyUrl: input.notifyUrl,
-      returnUrl: input.returnUrl,
-      expireTime: expireTime.toISOString(),
-      createdAt: now.toISOString(),
-      paidTime: null,
-      allowedChannels: input.allowedChannels,
-      metadata: input.metadata,
-      cashierUrl
-    };
-
-    this.orderKeyIndex.set(merchantKey, platformOrderNo);
-    this.orders.set(platformOrderNo, record);
-
-    return record;
-  }
-
-  getOrderByPlatformOrderNo(platformOrderNo: string): OrderRecord {
-    const order = this.orders.get(platformOrderNo);
-
-    if (!order) {
-      throw new NotFoundException("Order not found");
-    }
-
-    return order;
-  }
-
-  getOrderByMerchantOrderNo(appId: string, merchantOrderNo: string): OrderRecord {
-    const platformOrderNo = this.orderKeyIndex.get(`${appId}:${merchantOrderNo}`);
-
-    if (!platformOrderNo) {
-      throw new NotFoundException("Order not found");
-    }
-
-    return this.getOrderByPlatformOrderNo(platformOrderNo);
-  }
-
-  listOrders(): OrderRecord[] {
-    return [...this.orders.values()].sort((left, right) =>
-      right.createdAt.localeCompare(left.createdAt)
+      order.allowedChannels
     );
-  }
 
-  closeOrder(platformOrderNo: string): OrderRecord {
-    const order = this.getOrderByPlatformOrderNo(platformOrderNo);
+    if (latestAttempt) {
+      const closeResult = await this.paymentChannelRegistryService.closeOrder({
+        platformOrderNo,
+        channel: latestAttempt.channel,
+        channelTradeNo: latestAttempt.channelTradeNo
+      });
 
-    if (order.status === "SUCCESS" || order.status === "REFUND_PART" || order.status === "REFUND_ALL") {
-      return order;
-    }
+      if (closeResult?.tradeStatus === "UNCHANGED") {
+        order = await this.syncOrderIfNeeded(order);
 
-    order.status = "CLOSED";
-
-    return order;
-  }
-
-  createRefund(input: CreateRefundInput): RefundRecord {
-    const order = this.getOrderByPlatformOrderNo(input.platformOrderNo);
-
-    if (order.appId !== input.appId) {
-      throw new NotFoundException("Order not found for app");
-    }
-
-    if (!["SUCCESS", "REFUND_PART", "REFUND_ALL"].includes(order.status)) {
-      throw new BadRequestException("only paid orders can be refunded");
-    }
-
-    const refundKey = `${input.appId}:${input.merchantRefundNo}`;
-    const existingRefundNo = this.refundKeyIndex.get(refundKey);
-
-    if (existingRefundNo) {
-      const existing = this.refunds.get(existingRefundNo);
-
-      if (!existing) {
-        throw new NotFoundException("Existing refund index is broken");
+        if (order.status !== PrismaOrderStatus.WAIT_PAY && order.status !== PrismaOrderStatus.PAYING) {
+          return this.toOrderRecord(order);
+        }
       }
 
-      const isSameRequest =
-        existing.platformOrderNo === input.platformOrderNo &&
-        existing.refundAmount === input.refundAmount;
-
-      if (!isSameRequest) {
-        throw new ConflictException(
-          "merchant_refund_no already exists with different parameters"
-        );
-      }
-
-      return existing;
+      await this.paymentAttemptService.markAttemptCancelled(latestAttempt.attemptNo, {
+        failMessage: "order closed by platform"
+      });
     }
 
-    const refundedAmount = [...this.refunds.values()]
-      .filter((item) => item.platformOrderNo === input.platformOrderNo)
-      .reduce((sum, item) => sum + item.refundAmount, 0);
+    const updated = await this.markOrderClosedEntity(platformOrderNo, "MANUAL_CLOSE");
 
-    const paidAmount = order.paidAmount || order.amount;
-
-    if (input.refundAmount + refundedAmount > paidAmount) {
-      throw new BadRequestException("refund amount exceeds paid amount");
-    }
-
-    const refund: RefundRecord = {
-      appId: input.appId,
-      merchantRefundNo: input.merchantRefundNo,
-      platformRefundNo: this.generateCode("R"),
-      platformOrderNo: input.platformOrderNo,
-      refundAmount: input.refundAmount,
-      status: "SUCCESS",
-      reason: input.reason,
-      createdAt: new Date().toISOString(),
-      successTime: new Date().toISOString()
-    };
-
-    this.refundKeyIndex.set(refundKey, refund.merchantRefundNo);
-    this.refunds.set(refund.merchantRefundNo, refund);
-
-    const totalRefundedAmount = refundedAmount + input.refundAmount;
-    order.status =
-      totalRefundedAmount >= paidAmount ? "REFUND_ALL" : "REFUND_PART";
-
-    return refund;
+    return this.toOrderRecord(updated);
   }
 
-  getRefund(appId: string, merchantRefundNo: string): RefundRecord {
-    const refundNo = this.refundKeyIndex.get(`${appId}:${merchantRefundNo}`);
+  async markOrderPaidFromChannel(input: {
+    platformOrderNo: string;
+    paidAmount?: number;
+    successChannel?: string;
+    paidTime?: string;
+  }): Promise<OrderRecord> {
+    const updatedOrder = await this.prismaService.$transaction(async (tx) => {
+      const order = await tx.payOrder.findUnique({
+        where: { platformOrderNo: input.platformOrderNo }
+      });
 
-    if (!refundNo) {
-      throw new NotFoundException("Refund not found");
+      if (!order) {
+        throw new NotFoundException("Order not found");
+      }
+
+      if (
+        order.status === PrismaOrderStatus.SUCCESS ||
+        order.status === PrismaOrderStatus.REFUND_PART ||
+        order.status === PrismaOrderStatus.REFUND_ALL
+      ) {
+        return order;
+      }
+
+      const updateResult = await tx.payOrder.updateMany({
+        where: {
+          platformOrderNo: input.platformOrderNo,
+          status: {
+            notIn: [
+              PrismaOrderStatus.SUCCESS,
+              PrismaOrderStatus.REFUND_PART,
+              PrismaOrderStatus.REFUND_ALL
+            ]
+          }
+        },
+        data: {
+          status: PrismaOrderStatus.SUCCESS,
+          paidAmount: input.paidAmount ?? order.amount,
+          successChannel: input.successChannel ?? order.successChannel,
+          paidTime: input.paidTime ? new Date(input.paidTime) : new Date()
+        }
+      });
+
+      const updated = await tx.payOrder.findUniqueOrThrow({
+        where: { platformOrderNo: input.platformOrderNo }
+      });
+
+      if (updateResult.count > 0) {
+        await this.createNotifyTask(tx, {
+          businessType: BusinessType.PAY_ORDER,
+          businessNo: updated.platformOrderNo,
+          merchantId: updated.merchantId,
+          notifyUrl: updated.notifyUrl,
+          payload: {
+            eventType: "PAY_SUCCESS",
+            platformOrderNo: updated.platformOrderNo,
+            merchantOrderNo: updated.merchantOrderNo,
+            appId: updated.appId,
+            amount: updated.amount,
+            paidAmount: updated.paidAmount,
+            status: updated.status,
+            currency: updated.currency,
+            channel: updated.successChannel,
+            paidTime: updated.paidTime?.toISOString() ?? null
+          }
+        });
+      }
+
+      return updated;
+    });
+
+    return this.toOrderRecord(updatedOrder);
+  }
+
+  async markOrderClosedFromChannel(input: {
+    platformOrderNo: string;
+    closeReason: string;
+  }): Promise<OrderRecord> {
+    const updated = await this.markOrderClosedEntity(
+      input.platformOrderNo,
+      input.closeReason
+    );
+
+    return this.toOrderRecord(updated);
+  }
+
+  async createRefund(input: CreateRefundInput): Promise<RefundRecord> {
+    await this.markExpiredOrders();
+
+    const refundUniqueWhere = {
+      appId_merchantRefundNo: {
+        appId: input.appId,
+        merchantRefundNo: input.merchantRefundNo
+      }
+    } as const;
+    const existing = await this.prismaService.refundOrder.findUnique({
+      where: refundUniqueWhere
+    });
+
+    if (existing) {
+      this.assertSameRefundRequest(existing, input);
+
+      return this.toRefundRecord(existing);
     }
 
-    const refund = this.refunds.get(refundNo);
+    try {
+      const refund = await this.prismaService.$transaction(async (tx) => {
+        const order = await tx.payOrder.findUnique({
+          where: { platformOrderNo: input.platformOrderNo }
+        });
+
+        if (!order || order.appId !== input.appId) {
+          throw new NotFoundException("Order not found for app");
+        }
+
+        if (!REFUNDABLE_ORDER_STATUSES.includes(order.status)) {
+          throw new BadRequestException("only paid orders can be refunded");
+        }
+
+        const refundedAmountResult = await tx.refundOrder.aggregate({
+          where: {
+            platformOrderNo: input.platformOrderNo,
+            status: {
+              in: ACTIVE_REFUND_STATUSES
+            }
+          },
+          _sum: {
+            refundAmount: true
+          }
+        });
+        const refundedAmount = refundedAmountResult._sum.refundAmount ?? 0;
+        const paidAmount = order.paidAmount || order.amount;
+
+        if (input.refundAmount + refundedAmount > paidAmount) {
+          throw new BadRequestException("refund amount exceeds paid amount");
+        }
+
+        const now = new Date();
+        const createdRefund = await tx.refundOrder.create({
+          data: {
+            appId: input.appId,
+            platformRefundNo: this.generateCode("R"),
+            merchantRefundNo: input.merchantRefundNo,
+            platformOrderNo: input.platformOrderNo,
+            refundAmount: input.refundAmount,
+            status: PrismaRefundStatus.SUCCESS,
+            reason: input.reason,
+            successTime: now
+          }
+        });
+        const totalRefundedAmount = refundedAmount + input.refundAmount;
+
+        await tx.payOrder.update({
+          where: { platformOrderNo: input.platformOrderNo },
+          data: {
+            status:
+              totalRefundedAmount >= paidAmount
+                ? PrismaOrderStatus.REFUND_ALL
+                : PrismaOrderStatus.REFUND_PART
+          }
+        });
+
+        await this.createNotifyTask(tx, {
+          businessType: BusinessType.REFUND_ORDER,
+          businessNo: createdRefund.platformRefundNo,
+          merchantId: order.merchantId,
+          notifyUrl: order.notifyUrl,
+          payload: {
+            eventType: "REFUND_SUCCESS",
+            platformRefundNo: createdRefund.platformRefundNo,
+            merchantRefundNo: createdRefund.merchantRefundNo,
+            platformOrderNo: createdRefund.platformOrderNo,
+            appId: createdRefund.appId,
+            refundAmount: createdRefund.refundAmount,
+            status: createdRefund.status,
+            reason: createdRefund.reason,
+            successTime: createdRefund.successTime?.toISOString() ?? null
+          }
+        });
+
+        return createdRefund;
+      });
+
+      return this.toRefundRecord(refund);
+    } catch (error) {
+      if (!this.isUniqueConstraintError(error)) {
+        throw error;
+      }
+
+      const conflicted = await this.prismaService.refundOrder.findUnique({
+        where: refundUniqueWhere
+      });
+
+      if (!conflicted) {
+        throw error;
+      }
+
+      this.assertSameRefundRequest(conflicted, input);
+
+      return this.toRefundRecord(conflicted);
+    }
+  }
+
+  async getRefund(appId: string, merchantRefundNo: string): Promise<RefundRecord> {
+    const refund = await this.prismaService.refundOrder.findUnique({
+      where: {
+        appId_merchantRefundNo: {
+          appId,
+          merchantRefundNo
+        }
+      }
+    });
 
     if (!refund) {
       throw new NotFoundException("Refund not found");
     }
 
-    return refund;
+    return this.toRefundRecord(refund);
   }
 
-  listRefunds(): RefundRecord[] {
-    return [...this.refunds.values()].sort((left, right) =>
-      right.createdAt.localeCompare(left.createdAt)
-    );
+  async listRefunds(): Promise<RefundRecord[]> {
+    const refunds = await this.prismaService.refundOrder.findMany({
+      orderBy: { createdAt: "desc" }
+    });
+
+    return refunds.map((refund) => this.toRefundRecord(refund));
   }
 
-  getDashboardSummary(): {
+  async getDashboardSummary(): Promise<{
     metrics: Array<{ key: string; label: string; value: number }>;
     latestOrders: OrderRecord[];
     latestRefunds: RefundRecord[];
-  } {
+  }> {
+    await this.markExpiredOrders();
+
+    const [
+      merchantAppCount,
+      orderCount,
+      refundCount,
+      successOrderCount,
+      latestOrders,
+      latestRefunds
+    ] = await Promise.all([
+      this.prismaService.merchantApp.count(),
+      this.prismaService.payOrder.count(),
+      this.prismaService.refundOrder.count(),
+      this.prismaService.payOrder.count({
+        where: {
+          status: {
+            in: [
+              PrismaOrderStatus.SUCCESS,
+              PrismaOrderStatus.REFUND_PART,
+              PrismaOrderStatus.REFUND_ALL
+            ]
+          }
+        }
+      }),
+      this.prismaService.payOrder.findMany({
+        orderBy: { createdAt: "desc" },
+        take: 5
+      }),
+      this.prismaService.refundOrder.findMany({
+        orderBy: { createdAt: "desc" },
+        take: 5
+      })
+    ]);
+
     return {
       metrics: [
-        { key: "merchantApps", label: "商户应用数", value: this.merchantApps.length },
-        { key: "orders", label: "订单数", value: this.orders.size },
-        { key: "refunds", label: "退款单数", value: this.refunds.size },
+        { key: "merchantApps", label: "商户应用数", value: merchantAppCount },
+        { key: "orders", label: "订单数", value: orderCount },
+        { key: "refunds", label: "退款单数", value: refundCount },
         {
           key: "successOrders",
           label: "成功或已退款订单数",
-          value: [...this.orders.values()].filter((item) =>
-            ["SUCCESS", "REFUND_PART", "REFUND_ALL"].includes(item.status)
-          ).length
+          value: successOrderCount
         }
       ],
-      latestOrders: this.listOrders().slice(0, 5),
-      latestRefunds: this.listRefunds().slice(0, 5)
+      latestOrders: latestOrders.map((order) => this.toOrderRecord(order)),
+      latestRefunds: latestRefunds.map((refund) => this.toRefundRecord(refund))
     };
   }
 
-  private generateCode(prefix: "P" | "R"): string {
+  private generateCode(prefix: "P" | "R" | "N"): string {
     const date = new Date().toISOString().replace(/[-:TZ.]/g, "").slice(0, 14);
     const random = Math.floor(Math.random() * 100000)
       .toString()
       .padStart(5, "0");
 
     return `${prefix}${date}${random}`;
+  }
+
+  private async createNotifyTask(
+    tx: Prisma.TransactionClient,
+    input: {
+      businessType: BusinessType;
+      businessNo: string;
+      merchantId: string;
+      notifyUrl: string;
+      payload: Record<string, unknown>;
+    }
+  ): Promise<void> {
+    const notifyId = this.generateCode("N");
+
+    await tx.notifyTask.create({
+      data: {
+        notifyId,
+        businessType: input.businessType,
+        businessNo: input.businessNo,
+        merchantId: input.merchantId,
+        notifyUrl: input.notifyUrl,
+        payload: {
+          notifyId,
+          ...input.payload
+        } as Prisma.InputJsonValue
+      }
+    });
+  }
+
+  private async syncOrderIfNeeded(order: PayOrder): Promise<PayOrder> {
+    if (
+      order.status !== PrismaOrderStatus.WAIT_PAY &&
+      order.status !== PrismaOrderStatus.PAYING
+    ) {
+      return order;
+    }
+
+    const latestAttempt = await this.paymentAttemptService.findLatestAttemptForOrder(
+      order.platformOrderNo,
+      order.allowedChannels
+    );
+
+    if (!latestAttempt) {
+      return order;
+    }
+
+    const queryResult = await this.paymentChannelRegistryService.queryOrder({
+      platformOrderNo: order.platformOrderNo,
+      channel: latestAttempt.channel,
+      channelTradeNo: latestAttempt.channelTradeNo
+    });
+
+    if (!queryResult) {
+      return order;
+    }
+
+    if (queryResult.tradeStatus === "SUCCESS") {
+      await this.paymentAttemptService.markAttemptSuccess(latestAttempt.attemptNo, {
+        channelTradeNo: queryResult.channelTradeNo,
+        successTime: queryResult.paidTime,
+        channelPayload: queryResult.rawPayload
+      });
+
+      const updated = await this.markOrderPaidFromChannel({
+        platformOrderNo: order.platformOrderNo,
+        paidAmount: queryResult.paidAmount ?? order.amount,
+        successChannel: latestAttempt.channel,
+        paidTime: queryResult.paidTime
+      });
+
+      return this.prismaService.payOrder.findUniqueOrThrow({
+        where: {
+          platformOrderNo: updated.platformOrderNo
+        }
+      });
+    }
+
+    if (queryResult.tradeStatus === "CLOSED") {
+      await this.paymentAttemptService.markAttemptCancelled(latestAttempt.attemptNo, {
+        failMessage: "trade closed by channel"
+      });
+
+      return this.markOrderClosedEntity(order.platformOrderNo, "CHANNEL_CLOSED");
+    }
+
+    return order;
+  }
+
+  private async ensureDemoData(): Promise<void> {
+    const now = new Date();
+    const expireTime = new Date(now.getTime() + 15 * 60 * 1000);
+
+    await this.prismaService.$transaction(async (tx) => {
+      const merchant = await tx.merchant.upsert({
+        where: { merchantNo: "M202603120001" },
+        update: {
+          merchantName: "演示商户",
+          status: PrismaMerchantStatus.ACTIVE
+        },
+        create: {
+          merchantNo: "M202603120001",
+          merchantName: "演示商户",
+          status: PrismaMerchantStatus.ACTIVE
+        }
+      });
+
+      await tx.merchantApp.upsert({
+        where: { appId: "demo_app" },
+        update: {
+          merchantId: merchant.id,
+          appName: "演示商户应用",
+          status: PrismaMerchantStatus.ACTIVE,
+          signType: PrismaSignType.HMAC_SHA256,
+          secretCiphertext: "demo_app_secret",
+          allowedChannels: ["wechat_qr", "alipay_qr", "alipay_wap"]
+        },
+        create: {
+          merchantId: merchant.id,
+          appId: "demo_app",
+          appName: "演示商户应用",
+          status: PrismaMerchantStatus.ACTIVE,
+          signType: PrismaSignType.HMAC_SHA256,
+          secretCiphertext: "demo_app_secret",
+          allowedChannels: ["wechat_qr", "alipay_qr", "alipay_wap"]
+        }
+      });
+
+      await tx.merchantApp.upsert({
+        where: { appId: "partner_app" },
+        update: {
+          merchantId: merchant.id,
+          appName: "渠道联调应用",
+          status: PrismaMerchantStatus.ACTIVE,
+          signType: PrismaSignType.RSA2,
+          secretCiphertext: "partner_app_secret",
+          allowedChannels: ["wechat_qr"]
+        },
+        create: {
+          merchantId: merchant.id,
+          appId: "partner_app",
+          appName: "渠道联调应用",
+          status: PrismaMerchantStatus.ACTIVE,
+          signType: PrismaSignType.RSA2,
+          secretCiphertext: "partner_app_secret",
+          allowedChannels: ["wechat_qr"]
+        }
+      });
+
+      const sampleOrder = await tx.payOrder.upsert({
+        where: {
+          appId_merchantOrderNo: {
+            appId: "demo_app",
+            merchantOrderNo: "ORDER_DEMO_10001"
+          }
+        },
+        update: {
+          merchantId: merchant.id,
+          amount: 9900,
+          currency: "CNY",
+          subject: "VIP会员",
+          description: "首个演示订单",
+          status: PrismaOrderStatus.REFUND_PART,
+          paidAmount: 9900,
+          successChannel: "wechat_qr",
+          notifyUrl: "https://merchant.example.com/pay/notify",
+          returnUrl: "https://merchant.example.com/pay/result",
+          allowedChannels: ["wechat_qr", "alipay_qr", "alipay_wap"],
+          expireTime,
+          paidTime: now,
+          metadata: {
+            scene: "demo"
+          } as Prisma.InputJsonValue
+        },
+        create: {
+          merchantId: merchant.id,
+          appId: "demo_app",
+          platformOrderNo: this.generateCode("P"),
+          merchantOrderNo: "ORDER_DEMO_10001",
+          amount: 9900,
+          currency: "CNY",
+          subject: "VIP会员",
+          description: "首个演示订单",
+          status: PrismaOrderStatus.REFUND_PART,
+          paidAmount: 9900,
+          successChannel: "wechat_qr",
+          notifyUrl: "https://merchant.example.com/pay/notify",
+          returnUrl: "https://merchant.example.com/pay/result",
+          allowedChannels: ["wechat_qr", "alipay_qr", "alipay_wap"],
+          expireTime,
+          paidTime: now,
+          metadata: {
+            scene: "demo"
+          } as Prisma.InputJsonValue
+        }
+      });
+
+      await tx.refundOrder.upsert({
+        where: {
+          appId_merchantRefundNo: {
+            appId: "demo_app",
+            merchantRefundNo: "REFUND_DEMO_10001"
+          }
+        },
+        update: {
+          platformOrderNo: sampleOrder.platformOrderNo,
+          refundAmount: 3000,
+          status: PrismaRefundStatus.SUCCESS,
+          reason: "演示部分退款",
+          successTime: now
+        },
+        create: {
+          appId: "demo_app",
+          platformRefundNo: this.generateCode("R"),
+          merchantRefundNo: "REFUND_DEMO_10001",
+          platformOrderNo: sampleOrder.platformOrderNo,
+          refundAmount: 3000,
+          status: PrismaRefundStatus.SUCCESS,
+          reason: "演示部分退款",
+          successTime: now
+        }
+      });
+    });
+  }
+
+  private async markExpiredOrders(): Promise<void> {
+    await this.prismaService.payOrder.updateMany({
+      where: {
+        status: {
+          in: [PrismaOrderStatus.WAIT_PAY, PrismaOrderStatus.PAYING]
+        },
+        expireTime: {
+          lt: new Date()
+        }
+      },
+      data: {
+        status: PrismaOrderStatus.EXPIRED,
+        closeReason: "ORDER_TIMEOUT"
+      }
+    });
+  }
+
+  private async markOrderClosedEntity(
+    platformOrderNo: string,
+    closeReason: string
+  ) {
+    const order = await this.prismaService.payOrder.findUnique({
+      where: { platformOrderNo }
+    });
+
+    if (!order) {
+      throw new NotFoundException("Order not found");
+    }
+
+    if (
+      order.status === PrismaOrderStatus.SUCCESS ||
+      order.status === PrismaOrderStatus.REFUND_PART ||
+      order.status === PrismaOrderStatus.REFUND_ALL
+    ) {
+      return order;
+    }
+
+    if (
+      order.status === PrismaOrderStatus.CLOSED ||
+      order.status === PrismaOrderStatus.EXPIRED
+    ) {
+      return order;
+    }
+
+    return this.prismaService.payOrder.update({
+      where: { platformOrderNo },
+      data: {
+        status: PrismaOrderStatus.CLOSED,
+        closeReason
+      }
+    });
+  }
+
+  private async getActiveMerchantApp(appId: string) {
+    const merchantApp = await this.prismaService.merchantApp.findUnique({
+      where: { appId },
+      include: { merchant: true }
+    });
+
+    if (!merchantApp) {
+      throw new NotFoundException("Merchant app not found");
+    }
+
+    if (
+      merchantApp.status !== PrismaMerchantStatus.ACTIVE ||
+      merchantApp.merchant.status !== PrismaMerchantStatus.ACTIVE
+    ) {
+      throw new BadRequestException("merchant app is inactive");
+    }
+
+    return merchantApp;
+  }
+
+  private resolveAllowedChannels(
+    appAllowedChannels: string[],
+    requestedChannels?: string[]
+  ): string[] {
+    const appChannels =
+      appAllowedChannels.length > 0 ? appAllowedChannels : DEFAULT_ALLOWED_CHANNELS;
+    const normalizedRequested =
+      requestedChannels && requestedChannels.length > 0
+        ? [...new Set(requestedChannels)]
+        : appChannels;
+    const disallowedChannels = normalizedRequested.filter(
+      (channel) => !appChannels.includes(channel)
+    );
+
+    if (disallowedChannels.length > 0) {
+      throw new BadRequestException(
+        `channels not enabled for app: ${disallowedChannels.join(", ")}`
+      );
+    }
+
+    return normalizedRequested;
+  }
+
+  private assertSameOrderRequest(
+    existing: {
+      amount: number;
+      currency: string;
+      subject: string;
+      description: string | null;
+      notifyUrl: string;
+      returnUrl: string | null;
+      allowedChannels: string[];
+      metadata: Prisma.JsonValue | null;
+    },
+    input: CreateOrderInput & { allowedChannels: string[] }
+  ): void {
+    const isSameRequest =
+      existing.amount === input.amount &&
+      existing.currency === input.currency &&
+      existing.subject === input.subject &&
+      (existing.description ?? null) === (input.description ?? null) &&
+      existing.notifyUrl === input.notifyUrl &&
+      (existing.returnUrl ?? null) === (input.returnUrl ?? null) &&
+      this.sameStringArray(existing.allowedChannels, input.allowedChannels) &&
+      this.sameJson(existing.metadata, input.metadata ?? null);
+
+    if (!isSameRequest) {
+      throw new ConflictException(
+        "merchant_order_no already exists with different parameters"
+      );
+    }
+  }
+
+  private assertSameRefundRequest(
+    existing: {
+      platformOrderNo: string;
+      refundAmount: number;
+      reason: string;
+    },
+    input: CreateRefundInput
+  ): void {
+    const isSameRequest =
+      existing.platformOrderNo === input.platformOrderNo &&
+      existing.refundAmount === input.refundAmount &&
+      existing.reason === input.reason;
+
+    if (!isSameRequest) {
+      throw new ConflictException(
+        "merchant_refund_no already exists with different parameters"
+      );
+    }
+  }
+
+  private toOrderRecord(order: {
+    appId: string;
+    platformOrderNo: string;
+    merchantOrderNo: string;
+    amount: number;
+    paidAmount: number;
+    currency: string;
+    subject: string;
+    description: string | null;
+    status: PrismaOrderStatus;
+    successChannel: string | null;
+    notifyUrl: string;
+    returnUrl: string | null;
+    expireTime: Date;
+    createdAt: Date;
+    paidTime: Date | null;
+    allowedChannels: string[];
+    metadata: Prisma.JsonValue | null;
+  }): OrderRecord {
+    return {
+      appId: order.appId,
+      platformOrderNo: order.platformOrderNo,
+      merchantOrderNo: order.merchantOrderNo,
+      amount: order.amount,
+      paidAmount: order.paidAmount,
+      currency: order.currency,
+      subject: order.subject,
+      description: order.description ?? undefined,
+      status: order.status,
+      channel: order.successChannel,
+      notifyUrl: order.notifyUrl,
+      returnUrl: order.returnUrl ?? undefined,
+      expireTime: order.expireTime.toISOString(),
+      createdAt: order.createdAt.toISOString(),
+      paidTime: order.paidTime?.toISOString() ?? null,
+      allowedChannels: order.allowedChannels,
+      metadata: this.toMetadataRecord(order.metadata),
+      cashierUrl: this.getCashierUrl(order.platformOrderNo)
+    };
+  }
+
+  private toRefundRecord(refund: {
+    appId: string;
+    merchantRefundNo: string;
+    platformRefundNo: string;
+    platformOrderNo: string;
+    refundAmount: number;
+    status: PrismaRefundStatus;
+    reason: string;
+    createdAt: Date;
+    successTime: Date | null;
+  }): RefundRecord {
+    return {
+      appId: refund.appId,
+      merchantRefundNo: refund.merchantRefundNo,
+      platformRefundNo: refund.platformRefundNo,
+      platformOrderNo: refund.platformOrderNo,
+      refundAmount: refund.refundAmount,
+      status: refund.status,
+      reason: refund.reason,
+      createdAt: refund.createdAt.toISOString(),
+      successTime: refund.successTime?.toISOString() ?? null
+    };
+  }
+
+  private getCashierUrl(platformOrderNo: string): string {
+    return `${this.configService.get<string>("WEB_BASE_URL") ?? "http://localhost:5173"}/cashier/${platformOrderNo}`;
+  }
+
+  private toApiSignType(signType: PrismaSignType): string {
+    return signType === PrismaSignType.HMAC_SHA256 ? "HMAC-SHA256" : signType;
+  }
+
+  private toMetadataRecord(
+    value: Prisma.JsonValue | null
+  ): Record<string, unknown> | undefined {
+    if (!value || Array.isArray(value) || typeof value !== "object") {
+      return undefined;
+    }
+
+    return value as Record<string, unknown>;
+  }
+
+  private sameStringArray(left: string[], right: string[]): boolean {
+    return this.stableStringify([...left].sort()) === this.stableStringify([...right].sort());
+  }
+
+  private sameJson(left: Prisma.JsonValue | null, right: unknown): boolean {
+    return this.stableStringify(left) === this.stableStringify(right);
+  }
+
+  private stableStringify(value: unknown): string {
+    return JSON.stringify(this.sortJsonValue(value) ?? null);
+  }
+
+  private sortJsonValue(value: unknown): unknown {
+    if (Array.isArray(value)) {
+      return value.map((item) => this.sortJsonValue(item));
+    }
+
+    if (value && typeof value === "object") {
+      return Object.keys(value as Record<string, unknown>)
+        .sort()
+        .reduce<Record<string, unknown>>((result, key) => {
+          result[key] = this.sortJsonValue(
+            (value as Record<string, unknown>)[key]
+          );
+
+          return result;
+        }, {});
+    }
+
+    return value;
+  }
+
+  private isUniqueConstraintError(error: unknown): boolean {
+    return (
+      typeof error === "object" &&
+      error !== null &&
+      "code" in error &&
+      error.code === "P2002"
+    );
   }
 }

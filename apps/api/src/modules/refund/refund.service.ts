@@ -6,7 +6,7 @@ import { CreateRefundDto } from "./dto/create-refund.dto";
 export class RefundService {
   constructor(private readonly paymentStoreService: PaymentStoreService) {}
 
-  createRefund(appId: string, input: CreateRefundDto) {
+  async createRefund(appId: string, input: CreateRefundDto) {
     return this.paymentStoreService.createRefund({
       appId,
       platformOrderNo: input.platformOrderNo,
@@ -24,4 +24,3 @@ export class RefundService {
     return this.paymentStoreService.listRefunds();
   }
 }
-

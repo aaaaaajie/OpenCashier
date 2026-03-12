@@ -5,8 +5,7 @@ import { PaymentStoreService } from "../payment/payment-store.service";
 export class MerchantService {
   constructor(private readonly paymentStoreService: PaymentStoreService) {}
 
-  listMerchantApps() {
+  async listMerchantApps() {
     return this.paymentStoreService.listMerchantApps();
   }
 }
-

@@ -27,6 +27,15 @@ interface DashboardState {
     status: string;
     createdAt: string;
   }>;
+  paymentProviders: Array<{
+    providerCode: string;
+    displayName: string;
+    integrationMode: string;
+    supportedChannels: string[];
+    officialSdkPackage?: string;
+    enabled: boolean;
+    note: string;
+  }>;
 }
 
 export function DashboardPage() {
@@ -72,8 +81,8 @@ export function DashboardPage() {
           第一阶段框架总览
         </Typography.Title>
         <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
-          当前页面用于确认 API、后台和收银台骨架已经打通。后续会把内存数据替换为
-          Prisma + PostgreSQL 的真实实现。
+          当前页面用于确认 API、后台和收银台骨架已经打通。订单、退款和商户应用
+          现在已经走 Prisma + PostgreSQL，下一阶段再接真实支付渠道调用。
         </Typography.Paragraph>
       </Card>
 
@@ -151,7 +160,34 @@ export function DashboardPage() {
           </Card>
         </Col>
       </Row>
+
+      <Card className="page-card" title="支付渠道抽象层">
+        <Table
+          rowKey="providerCode"
+          pagination={false}
+          dataSource={dashboard?.paymentProviders ?? []}
+          columns={[
+            { title: "平台", dataIndex: "displayName" },
+            { title: "Provider Code", dataIndex: "providerCode" },
+            { title: "接入策略", dataIndex: "integrationMode" },
+            {
+              title: "官方 SDK",
+              dataIndex: "officialSdkPackage",
+              render: (value?: string) => value ?? "-"
+            },
+            {
+              title: "支持渠道",
+              dataIndex: "supportedChannels",
+              render: (value: string[]) => value.join(", ")
+            },
+            {
+              title: "是否已配置",
+              dataIndex: "enabled",
+              render: (value: boolean) => (value ? "是" : "否")
+            }
+          ]}
+        />
+      </Card>
     </>
   );
 }
-

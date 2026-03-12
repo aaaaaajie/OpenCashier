@@ -9,9 +9,10 @@
     "dev:web": "pnpm --filter @payment-platform/web dev",
     "build": "pnpm -r build",
     "typecheck": "pnpm -r typecheck",
+    "smoke:merchant": "node scripts/smoke-merchant-api.mjs",
     "prisma:generate": "pnpm --filter @payment-platform/api prisma:generate",
     "prisma:migrate:dev": "pnpm --filter @payment-platform/api prisma:migrate:dev",
-    "prisma:studio": "pnpm --filter @payment-platform/api prisma:studio"
+    "prisma:studio": "pnpm --filter @payment-platform/api prisma:studio",
+    "prisma:db:push": "pnpm --filter @payment-platform/api exec prisma db push --schema prisma/schema.prisma"
   }
 }
-

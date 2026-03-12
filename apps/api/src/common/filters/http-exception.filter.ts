@@ -28,9 +28,16 @@ export class HttpExceptionFilter implements ExceptionFilter {
         ? payload
         : (payload as { message?: string | string[] } | undefined)?.message ??
           "Internal server error";
+    const explicitCode =
+      typeof payload === "object" &&
+      payload !== null &&
+      "code" in payload &&
+      typeof payload.code === "string"
+        ? payload.code
+        : undefined;
 
     response.status(status).json({
-      code: this.mapCode(status),
+      code: explicitCode ?? this.mapCode(status),
       message: Array.isArray(message) ? message.join(", ") : message,
       requestId: request.requestId ?? "",
       data: null
@@ -53,4 +60,3 @@ export class HttpExceptionFilter implements ExceptionFilter {
     return "SYSTEM_BUSY";
   }
 }
-

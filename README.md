@@ -40,6 +40,7 @@ cp .env.example .env
 ```
 
 根目录 `.env` 会同时被 API 和 Web 读取，前端只会暴露 `VITE_` 前缀变量。
+`APP_SECRET` 用于签发公开收银台 token，开发环境可先用 `.env.example` 的默认值。
 
 4. 生成 Prisma Client 并运行开发迁移
 
@@ -52,6 +53,12 @@ pnpm prisma:migrate:dev
 
 ```bash
 pnpm dev
+```
+
+6. 跑商户侧 smoke 测试
+
+```bash
+pnpm smoke:merchant
 ```
 
 ## 默认地址
@@ -71,7 +78,14 @@ pnpm dev
 
 - 商户应用、订单、退款已经切到 Prisma + PostgreSQL
 - 启动 API 后会自动写入最小 demo 数据，方便本地联调后台和收银台
+- 默认会写入两个 HMAC 演示应用：`demo_app`、`demo_app_other`
 - 收银台会把真实渠道会话写入 `pay_attempt`，便于后续补查单、关单和回调处理
 - 支付宝异步通知入口固定为 `/api/v1/notify/alipay`，对外商户 `notifyUrl` 继续保存在订单里，后续由平台统一投递
 - 商户异步通知任务会自动扫描 `notify_task` 并按 `1m / 5m / 15m / 30m / 1h / 6h` 退避重试
 - 后台通知任务页读取 `/api/v1/admin/notifications`，支持手动补发 `POST /api/v1/admin/notifications/:notifyId/retry`
+- 商户请求现在要求 `HMAC-SHA256 + X-Timestamp + X-Nonce + Idempotency-Key`
+- 收银台 URL 现在使用签名 token，不再直接暴露平台单号
+
+## 接入文档
+
+- 商户签名与自测说明：[merchant-api-integration.md](/Users/huoshijie/code/payment-platform/docs/merchant-api-integration.md)

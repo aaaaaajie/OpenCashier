@@ -15,6 +15,7 @@ import {
   RefundStatus as PrismaRefundStatus,
   SignType as PrismaSignType
 } from "@prisma/client";
+import { createCashierToken } from "../../common/utils/cashier-token.util";
 import { PrismaService } from "../../prisma/prisma.service";
 import { PaymentChannelRegistryService } from "./channels/payment-channel-registry.service";
 import { PaymentAttemptService } from "./payment-attempt.service";
@@ -218,10 +219,25 @@ export class PaymentStoreService implements OnModuleInit {
     });
 
     if (!existingOrder) {
-      throw new NotFoundException("Order not found");
+      throw new NotFoundException({
+        code: "ORDER_NOT_FOUND",
+        message: "Order not found"
+      });
     }
 
     let order: PayOrder = existingOrder;
+    order = await this.syncOrderIfNeeded(order);
+
+    return this.toOrderRecord(order);
+  }
+
+  async getOrderByPlatformOrderNoForApp(
+    appId: string,
+    platformOrderNo: string
+  ): Promise<OrderRecord> {
+    await this.markExpiredOrders();
+
+    let order = await this.getOwnedOrderEntityOrThrow(appId, platformOrderNo);
     order = await this.syncOrderIfNeeded(order);
 
     return this.toOrderRecord(order);
@@ -243,7 +259,10 @@ export class PaymentStoreService implements OnModuleInit {
     });
 
     if (!existingOrder) {
-      throw new NotFoundException("Order not found");
+      throw new NotFoundException({
+        code: "ORDER_NOT_FOUND",
+        message: "Order not found"
+      });
     }
 
     let order: PayOrder = existingOrder;
@@ -270,7 +289,10 @@ export class PaymentStoreService implements OnModuleInit {
     });
 
     if (!existingOrder) {
-      throw new NotFoundException("Order not found");
+      throw new NotFoundException({
+        code: "ORDER_NOT_FOUND",
+        message: "Order not found"
+      });
     }
 
     let order: PayOrder = existingOrder;
@@ -316,6 +338,15 @@ export class PaymentStoreService implements OnModuleInit {
     return this.toOrderRecord(updated);
   }
 
+  async closeOrderForApp(
+    appId: string,
+    platformOrderNo: string
+  ): Promise<OrderRecord> {
+    await this.getOwnedOrderEntityOrThrow(appId, platformOrderNo);
+
+    return this.closeOrder(platformOrderNo);
+  }
+
   async markOrderPaidFromChannel(input: {
     platformOrderNo: string;
     paidAmount?: number;
@@ -328,7 +359,10 @@ export class PaymentStoreService implements OnModuleInit {
       });
 
       if (!order) {
-        throw new NotFoundException("Order not found");
+        throw new NotFoundException({
+          code: "ORDER_NOT_FOUND",
+          message: "Order not found"
+        });
       }
 
       if (
@@ -427,11 +461,17 @@ export class PaymentStoreService implements OnModuleInit {
         });
 
         if (!order || order.appId !== input.appId) {
-          throw new NotFoundException("Order not found for app");
+          throw new NotFoundException({
+            code: "ORDER_NOT_FOUND",
+            message: "Order not found for app"
+          });
         }
 
         if (!REFUNDABLE_ORDER_STATUSES.includes(order.status)) {
-          throw new BadRequestException("only paid orders can be refunded");
+          throw new BadRequestException({
+            code: "ORDER_STATUS_INVALID",
+            message: "Only paid orders can be refunded"
+          });
         }
 
         const refundedAmountResult = await tx.refundOrder.aggregate({
@@ -449,7 +489,10 @@ export class PaymentStoreService implements OnModuleInit {
         const paidAmount = order.paidAmount || order.amount;
 
         if (input.refundAmount + refundedAmount > paidAmount) {
-          throw new BadRequestException("refund amount exceeds paid amount");
+          throw new BadRequestException({
+            code: "REFUND_OVER_LIMIT",
+            message: "Refund amount exceeds paid amount"
+          });
         }
 
         const now = new Date();
@@ -529,7 +572,10 @@ export class PaymentStoreService implements OnModuleInit {
     });
 
     if (!refund) {
-      throw new NotFoundException("Refund not found");
+      throw new NotFoundException({
+        code: "REFUND_NOT_FOUND",
+        message: "Refund not found"
+      });
     }
 
     return this.toRefundRecord(refund);
@@ -753,6 +799,27 @@ export class PaymentStoreService implements OnModuleInit {
         }
       });
 
+      await tx.merchantApp.upsert({
+        where: { appId: "demo_app_other" },
+        update: {
+          merchantId: merchant.id,
+          appName: "第二演示商户应用",
+          status: PrismaMerchantStatus.ACTIVE,
+          signType: PrismaSignType.HMAC_SHA256,
+          secretCiphertext: "demo_app_other_secret",
+          allowedChannels: ["wechat_qr", "alipay_qr"]
+        },
+        create: {
+          merchantId: merchant.id,
+          appId: "demo_app_other",
+          appName: "第二演示商户应用",
+          status: PrismaMerchantStatus.ACTIVE,
+          signType: PrismaSignType.HMAC_SHA256,
+          secretCiphertext: "demo_app_other_secret",
+          allowedChannels: ["wechat_qr", "alipay_qr"]
+        }
+      });
+
       const sampleOrder = await tx.payOrder.upsert({
         where: {
           appId_merchantOrderNo: {
@@ -855,7 +922,10 @@ export class PaymentStoreService implements OnModuleInit {
     });
 
     if (!order) {
-      throw new NotFoundException("Order not found");
+      throw new NotFoundException({
+        code: "ORDER_NOT_FOUND",
+        message: "Order not found"
+      });
     }
 
     if (
@@ -889,17 +959,41 @@ export class PaymentStoreService implements OnModuleInit {
     });
 
     if (!merchantApp) {
-      throw new NotFoundException("Merchant app not found");
+      throw new NotFoundException({
+        code: "AUTH_INVALID",
+        message: "Merchant app not found"
+      });
     }
 
     if (
       merchantApp.status !== PrismaMerchantStatus.ACTIVE ||
       merchantApp.merchant.status !== PrismaMerchantStatus.ACTIVE
     ) {
-      throw new BadRequestException("merchant app is inactive");
+      throw new BadRequestException({
+        code: "AUTH_INVALID",
+        message: "Merchant app is inactive"
+      });
     }
 
     return merchantApp;
+  }
+
+  private async getOwnedOrderEntityOrThrow(
+    appId: string,
+    platformOrderNo: string
+  ): Promise<PayOrder> {
+    const order = await this.prismaService.payOrder.findUnique({
+      where: { platformOrderNo }
+    });
+
+    if (!order || order.appId !== appId) {
+      throw new NotFoundException({
+        code: "ORDER_NOT_FOUND",
+        message: "Order not found"
+      });
+    }
+
+    return order;
   }
 
   private resolveAllowedChannels(
@@ -1012,7 +1106,7 @@ export class PaymentStoreService implements OnModuleInit {
       paidTime: order.paidTime?.toISOString() ?? null,
       allowedChannels: order.allowedChannels,
       metadata: this.toMetadataRecord(order.metadata),
-      cashierUrl: this.getCashierUrl(order.platformOrderNo)
+      cashierUrl: this.getCashierUrl(order.platformOrderNo, order.expireTime)
     };
   }
 
@@ -1040,8 +1134,15 @@ export class PaymentStoreService implements OnModuleInit {
     };
   }
 
-  private getCashierUrl(platformOrderNo: string): string {
-    return `${this.configService.get<string>("WEB_BASE_URL") ?? "http://localhost:5173"}/cashier/${platformOrderNo}`;
+  private getCashierUrl(platformOrderNo: string, expireTime: Date): string {
+    const secret =
+      this.configService.get<string>("APP_SECRET") ?? "local-dev-app-secret";
+    const cashierToken = createCashierToken(secret, {
+      platformOrderNo,
+      expireTime: expireTime.toISOString()
+    });
+
+    return `${this.configService.get<string>("WEB_BASE_URL") ?? "http://localhost:5173"}/cashier/${cashierToken}`;
   }
 
   private toApiSignType(signType: PrismaSignType): string {

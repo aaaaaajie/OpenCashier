@@ -1,5 +1,6 @@
-import { Injectable } from "@nestjs/common";
+import { Injectable, NotFoundException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
+import { parseCashierToken } from "../../common/utils/cashier-token.util";
 import { PaymentChannelRegistryService } from "../payment/channels/payment-channel-registry.service";
 import { PaymentAttemptService } from "../payment/payment-attempt.service";
 import { PaymentStoreService } from "../payment/payment-store.service";
@@ -13,9 +14,18 @@ export class CashierService {
     private readonly configService: ConfigService
   ) {}
 
-  async getCashierSession(platformOrderNo: string) {
-    const order =
-      await this.paymentStoreService.getOrderByPlatformOrderNo(platformOrderNo);
+  async getCashierSession(cashierToken: string) {
+    const appSecret =
+      this.configService.get<string>("APP_SECRET") ?? "local-dev-app-secret";
+    const tokenPayload = parseCashierToken(appSecret, cashierToken);
+
+    if (!tokenPayload) {
+      throw new NotFoundException("Cashier session not found");
+    }
+
+    const order = await this.paymentStoreService.getOrderByPlatformOrderNo(
+      tokenPayload.platformOrderNo
+    );
     const latestAttempts = await this.paymentAttemptService.findLatestAttemptsForOrder(
       order.platformOrderNo
     );

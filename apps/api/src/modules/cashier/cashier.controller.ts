@@ -7,13 +7,13 @@ import { CashierService } from "./cashier.service";
 export class CashierController {
   constructor(private readonly cashierService: CashierService) {}
 
-  @Get(":platformOrderNo")
+  @Get(":cashierToken")
   @ApiOperation({
     summary:
       "Get cashier session and channel previews using official SDK first / API fallback strategy"
   })
-  @ApiParam({ name: "platformOrderNo" })
-  getCashierSession(@Param("platformOrderNo") platformOrderNo: string) {
-    return this.cashierService.getCashierSession(platformOrderNo);
+  @ApiParam({ name: "cashierToken" })
+  getCashierSession(@Param("cashierToken") cashierToken: string) {
+    return this.cashierService.getCashierSession(cashierToken);
   }
 }

@@ -23,7 +23,8 @@ import { PaymentStoreService } from "./payment-store.service";
   exports: [
     PaymentStoreService,
     PaymentChannelRegistryService,
-    PaymentAttemptService
+    PaymentAttemptService,
+    AlipayChannelAdapter
   ]
 })
 export class PaymentModule {}

@@ -1,0 +1,17 @@
+{
+  "name": "payment-platform",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@9.15.4",
+  "scripts": {
+    "dev": "pnpm --parallel --filter @payment-platform/api --filter @payment-platform/web dev",
+    "dev:api": "pnpm --filter @payment-platform/api dev",
+    "dev:web": "pnpm --filter @payment-platform/web dev",
+    "build": "pnpm -r build",
+    "typecheck": "pnpm -r typecheck",
+    "prisma:generate": "pnpm --filter @payment-platform/api prisma:generate",
+    "prisma:migrate:dev": "pnpm --filter @payment-platform/api prisma:migrate:dev",
+    "prisma:studio": "pnpm --filter @payment-platform/api prisma:studio"
+  }
+}
+

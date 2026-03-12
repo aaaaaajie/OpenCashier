@@ -1,0 +1,40 @@
+:root {
+  color: rgba(0, 0, 0, 0.88);
+  background: #f5f7fa;
+  font-family:
+    "PingFang SC",
+    "Noto Sans SC",
+    "Helvetica Neue",
+    sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+  margin: 0;
+}
+
+body {
+  background:
+    radial-gradient(circle at top right, rgba(22, 119, 255, 0.08), transparent 28%),
+    linear-gradient(180deg, #f8fbff 0%, #f5f7fa 100%);
+}
+
+.page-card + .page-card {
+  margin-top: 16px;
+}
+
+.cashier-qr {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 240px;
+  border: 1px dashed #d9d9d9;
+  border-radius: 16px;
+  background:
+    linear-gradient(135deg, rgba(22, 119, 255, 0.06), rgba(82, 196, 26, 0.08));
+}
+

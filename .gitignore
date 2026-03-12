@@ -1,0 +1,16 @@
+node_modules
+.pnpm-store
+dist
+.DS_Store
+.env
+.env.local
+.env.*.local
+coverage
+.turbo
+apps/web/dist
+packages/*/dist
+apps/api/dist
+apps/api/generated
+apps/api/prisma/dev.db
+plan*
+skills

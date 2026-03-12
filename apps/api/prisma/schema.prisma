@@ -1,0 +1,245 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum MerchantStatus {
+  ACTIVE
+  INACTIVE
+  BLOCKED
+}
+
+enum SignType {
+  HMAC_SHA256
+  RSA2
+}
+
+enum OrderStatus {
+  WAIT_PAY
+  PAYING
+  SUCCESS
+  CLOSED
+  EXPIRED
+  REFUND_PART
+  REFUND_ALL
+}
+
+enum PayAttemptStatus {
+  INIT
+  CHANNEL_REQUESTING
+  USER_PAYING
+  SUCCESS
+  FAILED
+  CANCELLED
+  TIMEOUT
+}
+
+enum RefundStatus {
+  CREATED
+  PROCESSING
+  SUCCESS
+  FAILED
+  CLOSED
+}
+
+enum NotifyTaskStatus {
+  PENDING
+  RETRYING
+  SUCCESS
+  DEAD
+}
+
+enum BusinessType {
+  PAY_ORDER
+  REFUND_ORDER
+}
+
+model Merchant {
+  id           String        @id @default(uuid()) @db.Uuid
+  merchantNo   String        @unique @map("merchant_no")
+  merchantName String        @map("merchant_name")
+  status       MerchantStatus @default(ACTIVE)
+  ext          Json?
+  createdAt    DateTime      @default(now()) @map("created_at")
+  updatedAt    DateTime      @updatedAt @map("updated_at")
+  apps         MerchantApp[]
+  orders       PayOrder[]
+  notifyTasks  NotifyTask[]
+
+  @@map("merchant")
+}
+
+model MerchantApp {
+  id                String          @id @default(uuid()) @db.Uuid
+  merchantId        String          @map("merchant_id") @db.Uuid
+  merchant          Merchant        @relation(fields: [merchantId], references: [id], onDelete: Restrict)
+  appId             String          @unique @map("app_id")
+  appName           String          @map("app_name")
+  status            MerchantStatus  @default(ACTIVE)
+  signType          SignType        @default(HMAC_SHA256) @map("sign_type")
+  secretCiphertext  String?         @map("secret_ciphertext")
+  publicKey         String?         @map("public_key")
+  callbackWhitelist Json?           @map("callback_whitelist")
+  ipWhitelist       Json?           @map("ip_whitelist")
+  rateLimit         Int?            @map("rate_limit")
+  ext               Json?
+  createdAt         DateTime        @default(now()) @map("created_at")
+  updatedAt         DateTime        @updatedAt @map("updated_at")
+  orders            PayOrder[]
+  refunds           RefundOrder[]
+  idempotencyRecords IdempotencyRecord[]
+
+  @@map("merchant_app")
+}
+
+model PayOrder {
+  id              String       @id @default(uuid()) @db.Uuid
+  merchantId      String       @map("merchant_id") @db.Uuid
+  merchant        Merchant     @relation(fields: [merchantId], references: [id], onDelete: Restrict)
+  appId           String       @map("app_id")
+  app             MerchantApp  @relation(fields: [appId], references: [appId], onDelete: Restrict)
+  platformOrderNo String       @unique @map("platform_order_no")
+  merchantOrderNo String       @map("merchant_order_no")
+  amount          Int
+  currency        String       @default("CNY")
+  subject         String
+  description     String?
+  status          OrderStatus  @default(WAIT_PAY)
+  paidAmount      Int          @default(0) @map("paid_amount")
+  successChannel  String?      @map("success_channel")
+  notifyUrl       String       @map("notify_url")
+  returnUrl       String?      @map("return_url")
+  expireTime      DateTime     @map("expire_time")
+  paidTime        DateTime?    @map("paid_time")
+  closeReason     String?      @map("close_reason")
+  riskFlag        Json?        @map("risk_flag")
+  metadata        Json?
+  ext             Json?
+  createdAt       DateTime     @default(now()) @map("created_at")
+  updatedAt       DateTime     @updatedAt @map("updated_at")
+  attempts        PayAttempt[]
+  refunds         RefundOrder[]
+
+  @@unique([appId, merchantOrderNo], map: "pay_order_app_id_merchant_order_no_key")
+  @@index([status, expireTime], map: "pay_order_status_expire_time_idx")
+  @@map("pay_order")
+}
+
+model PayAttempt {
+  id               String            @id @default(uuid()) @db.Uuid
+  attemptNo        String            @unique @map("attempt_no")
+  platformOrderNo  String            @map("platform_order_no")
+  order            PayOrder          @relation(fields: [platformOrderNo], references: [platformOrderNo], onDelete: Restrict)
+  channel          String
+  status           PayAttemptStatus  @default(INIT)
+  channelRequestNo String?           @map("channel_request_no")
+  channelTradeNo   String?           @map("channel_trade_no")
+  qrContent        String?           @map("qr_content")
+  payUrl           String?           @map("pay_url")
+  failCode         String?           @map("fail_code")
+  failMessage      String?           @map("fail_message")
+  channelPayload   Json?             @map("channel_payload")
+  expireTime       DateTime?         @map("expire_time")
+  successTime      DateTime?         @map("success_time")
+  createdAt        DateTime          @default(now()) @map("created_at")
+  updatedAt        DateTime          @updatedAt @map("updated_at")
+
+  @@index([platformOrderNo, status], map: "pay_attempt_order_status_idx")
+  @@map("pay_attempt")
+}
+
+model RefundOrder {
+  id               String       @id @default(uuid()) @db.Uuid
+  platformRefundNo String       @unique @map("platform_refund_no")
+  merchantRefundNo String       @map("merchant_refund_no")
+  platformOrderNo  String       @map("platform_order_no")
+  order            PayOrder     @relation(fields: [platformOrderNo], references: [platformOrderNo], onDelete: Restrict)
+  appId            String       @map("app_id")
+  app              MerchantApp  @relation(fields: [appId], references: [appId], onDelete: Restrict)
+  refundAmount     Int          @map("refund_amount")
+  status           RefundStatus @default(CREATED)
+  reason           String
+  channelRefundNo  String?      @map("channel_refund_no")
+  channelPayload   Json?        @map("channel_payload")
+  successTime      DateTime?    @map("success_time")
+  createdAt        DateTime     @default(now()) @map("created_at")
+  updatedAt        DateTime     @updatedAt @map("updated_at")
+
+  @@unique([appId, merchantRefundNo], map: "refund_order_app_id_merchant_refund_no_key")
+  @@map("refund_order")
+}
+
+model NotifyTask {
+  id            String           @id @default(uuid()) @db.Uuid
+  notifyId      String           @unique @map("notify_id")
+  businessType  BusinessType     @map("business_type")
+  businessNo    String           @map("business_no")
+  merchantId    String           @map("merchant_id") @db.Uuid
+  merchant      Merchant         @relation(fields: [merchantId], references: [id], onDelete: Restrict)
+  notifyUrl     String           @map("notify_url")
+  payload       Json
+  status        NotifyTaskStatus @default(PENDING)
+  retryCount    Int              @default(0) @map("retry_count")
+  nextRetryTime DateTime?        @map("next_retry_time")
+  lastHttpCode  Int?             @map("last_http_code")
+  lastResponse  String?          @map("last_response")
+  traceId       String?          @map("trace_id")
+  createdAt     DateTime         @default(now()) @map("created_at")
+  updatedAt     DateTime         @updatedAt @map("updated_at")
+
+  @@index([status, nextRetryTime], map: "notify_task_status_next_retry_time_idx")
+  @@map("notify_task")
+}
+
+model IdempotencyRecord {
+  id               String      @id @default(uuid()) @db.Uuid
+  appId            String      @map("app_id")
+  app              MerchantApp @relation(fields: [appId], references: [appId], onDelete: Restrict)
+  action           String
+  idempotencyKey   String      @map("idempotency_key")
+  requestHash      String      @map("request_hash")
+  resourceNo       String?     @map("resource_no")
+  responseSnapshot Json?       @map("response_snapshot")
+  expireTime       DateTime    @map("expire_time")
+  createdAt        DateTime    @default(now()) @map("created_at")
+
+  @@unique([appId, action, idempotencyKey], map: "idempotency_record_app_action_key")
+  @@index([expireTime], map: "idempotency_record_expire_time_idx")
+  @@map("idempotency_record")
+}
+
+model ChannelEventLog {
+  id              String   @id @default(uuid()) @db.Uuid
+  channel         String
+  channelEventId  String   @map("channel_event_id")
+  eventType       String   @map("event_type")
+  resourceNo      String?  @map("resource_no")
+  verifyResult    Boolean  @default(false) @map("verify_result")
+  rawPayload      Json     @map("raw_payload")
+  processedResult Json?    @map("processed_result")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  @@unique([channel, channelEventId], map: "channel_event_log_channel_event_key")
+  @@map("channel_event_log")
+}
+
+model OperationAuditLog {
+  id            String   @id @default(uuid()) @db.Uuid
+  operatorId    String?  @map("operator_id")
+  operatorName  String?  @map("operator_name")
+  objectType    String   @map("object_type")
+  objectId      String   @map("object_id")
+  action        String
+  beforePayload Json?    @map("before_payload")
+  afterPayload  Json?    @map("after_payload")
+  sourceIp      String?  @map("source_ip")
+  traceId       String?  @map("trace_id")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  @@index([objectType, objectId], map: "operation_audit_log_object_idx")
+  @@map("operation_audit_log")
+}

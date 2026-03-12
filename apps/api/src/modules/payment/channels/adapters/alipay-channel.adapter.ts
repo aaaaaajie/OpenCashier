@@ -6,6 +6,8 @@ import {
   ChannelOrderCloseResult,
   ChannelOrderQueryInput,
   ChannelOrderQueryResult,
+  ChannelRefundInput,
+  ChannelRefundResult,
   ChannelSessionPreview,
   ChannelSessionPreviewInput,
   ProviderNotifyResult
@@ -38,7 +40,7 @@ export class AlipayChannelAdapter extends BasePaymentChannelAdapter {
   readonly officialSdkPackage = "alipay-sdk";
   override readonly notifyPath = "/api/v1/notify/alipay";
   readonly note =
-    "优先使用支付宝官方 Node SDK；当前已接入二维码预下单和 WAP 拉起，会继续补查单、关单、退款和回调验签。";
+    "优先使用支付宝官方 Node SDK；当前已接入二维码预下单、WAP 拉起、查单、关单、退款和回调验签。";
   private clientPromise?: Promise<AlipayClientLike>;
 
   constructor(
@@ -171,6 +173,56 @@ export class AlipayChannelAdapter extends BasePaymentChannelAdapter {
       this.asOptionalString(payload.subMsg ?? payload.sub_msg ?? payload.msg) ??
         "alipay trade close failed"
     );
+  }
+
+  override async refundOrder(
+    input: ChannelRefundInput
+  ): Promise<ChannelRefundResult | null> {
+    if (!this.isEnabled()) {
+      return null;
+    }
+
+    const client = await this.getClient();
+    const response = await client.exec(
+      "alipay.trade.refund",
+      {
+        bizContent: {
+          out_trade_no: input.platformOrderNo,
+          trade_no: input.channelTradeNo ?? undefined,
+          refund_amount: this.formatAmount(input.refundAmount),
+          refund_reason: input.reason,
+          out_request_no: input.merchantRefundNo
+        }
+      },
+      {
+        validateSign: Boolean(this.channelProviderConfigService.getAlipayConfig().publicKey)
+      }
+    );
+    const payload = this.unwrapExecResponse("alipay.trade.refund", response);
+
+    if (payload.code !== "10000") {
+      throw new BadGatewayException(
+        this.asOptionalString(payload.subMsg ?? payload.sub_msg ?? payload.msg) ??
+          "alipay trade refund failed"
+      );
+    }
+
+    const refundSuccess =
+      payload.fundChange === "Y" ||
+      payload.fund_change === "Y" ||
+      typeof this.toAmountInFen(payload.refundFee ?? payload.refund_fee) === "number";
+
+    return {
+      refundStatus: refundSuccess ? "SUCCESS" : "PROCESSING",
+      channelRefundNo:
+        this.asOptionalString(payload.tradeNo ?? payload.trade_no) ??
+        input.platformRefundNo,
+      channelTradeNo: this.asOptionalString(payload.tradeNo ?? payload.trade_no),
+      successTime: this.normalizeAlipayTime(
+        payload.gmtRefundPay ?? payload.gmt_refund_pay
+      ),
+      rawPayload: payload
+    };
   }
 
   override async verifyNotify(

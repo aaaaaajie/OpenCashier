@@ -455,7 +455,7 @@ export class PaymentStoreService implements OnModuleInit {
     }
 
     try {
-      const refund = await this.prismaService.$transaction(async (tx) => {
+      const preparedRefund = await this.prismaService.$transaction(async (tx) => {
         const order = await tx.payOrder.findUnique({
           where: { platformOrderNo: input.platformOrderNo }
         });
@@ -471,6 +471,24 @@ export class PaymentStoreService implements OnModuleInit {
           throw new BadRequestException({
             code: "ORDER_STATUS_INVALID",
             message: "Only paid orders can be refunded"
+          });
+        }
+
+        if (!order.successChannel) {
+          throw new BadRequestException({
+            code: "CHANNEL_UNAVAILABLE",
+            message: "Order has no refundable success channel"
+          });
+        }
+
+        const channelCatalog = this.paymentChannelRegistryService.getCatalogByChannel(
+          order.successChannel
+        );
+
+        if (!channelCatalog?.enabled) {
+          throw new BadRequestException({
+            code: "CHANNEL_UNAVAILABLE",
+            message: `${order.successChannel} is not configured for refund`
           });
         }
 
@@ -495,7 +513,6 @@ export class PaymentStoreService implements OnModuleInit {
           });
         }
 
-        const now = new Date();
         const createdRefund = await tx.refundOrder.create({
           data: {
             appId: input.appId,
@@ -503,62 +520,145 @@ export class PaymentStoreService implements OnModuleInit {
             merchantRefundNo: input.merchantRefundNo,
             platformOrderNo: input.platformOrderNo,
             refundAmount: input.refundAmount,
-            status: PrismaRefundStatus.SUCCESS,
-            reason: input.reason,
-            successTime: now
+            status: PrismaRefundStatus.CREATED,
+            reason: input.reason
           }
         });
-        const totalRefundedAmount = refundedAmount + input.refundAmount;
 
-        await tx.payOrder.update({
-          where: { platformOrderNo: input.platformOrderNo },
+        return {
+          refundId: createdRefund.id,
+          platformRefundNo: createdRefund.platformRefundNo,
+          totalRefundedAmount: refundedAmount + input.refundAmount,
+          paidAmount,
+          successChannel: order.successChannel,
+          channelTradeNo: await this.getLatestChannelTradeNo(tx, input.platformOrderNo),
+          merchantId: order.merchantId,
+          notifyUrl: order.notifyUrl
+        };
+      });
+      const refundResult = await this.paymentChannelRegistryService.refundOrder({
+        platformOrderNo: input.platformOrderNo,
+        platformRefundNo: preparedRefund.platformRefundNo,
+        merchantRefundNo: input.merchantRefundNo,
+        refundAmount: input.refundAmount,
+        reason: input.reason,
+        channel: preparedRefund.successChannel,
+        channelTradeNo: preparedRefund.channelTradeNo
+      });
+
+      if (!refundResult) {
+        throw new BadRequestException({
+          code: "CHANNEL_UNAVAILABLE",
+          message: `${preparedRefund.successChannel} refund is not available`
+        });
+      }
+
+      const refund = await this.prismaService.$transaction(async (tx) => {
+        const updatedRefund = await tx.refundOrder.update({
+          where: { id: preparedRefund.refundId },
           data: {
             status:
-              totalRefundedAmount >= paidAmount
-                ? PrismaOrderStatus.REFUND_ALL
-                : PrismaOrderStatus.REFUND_PART
+              refundResult.refundStatus === "SUCCESS"
+                ? PrismaRefundStatus.SUCCESS
+                : PrismaRefundStatus.PROCESSING,
+            channelRefundNo: refundResult.channelRefundNo,
+            channelPayload: refundResult.rawPayload
+              ? (refundResult.rawPayload as Prisma.InputJsonValue)
+              : undefined,
+            successTime:
+              refundResult.refundStatus === "SUCCESS"
+                ? refundResult.successTime
+                  ? new Date(refundResult.successTime)
+                  : new Date()
+                : null
           }
         });
 
-        await this.createNotifyTask(tx, {
-          businessType: BusinessType.REFUND_ORDER,
-          businessNo: createdRefund.platformRefundNo,
-          merchantId: order.merchantId,
-          notifyUrl: order.notifyUrl,
-          payload: {
-            eventType: "REFUND_SUCCESS",
-            platformRefundNo: createdRefund.platformRefundNo,
-            merchantRefundNo: createdRefund.merchantRefundNo,
-            platformOrderNo: createdRefund.platformOrderNo,
-            appId: createdRefund.appId,
-            refundAmount: createdRefund.refundAmount,
-            status: createdRefund.status,
-            reason: createdRefund.reason,
-            successTime: createdRefund.successTime?.toISOString() ?? null
-          }
-        });
+        if (refundResult.refundStatus === "SUCCESS") {
+          await tx.payOrder.update({
+            where: { platformOrderNo: input.platformOrderNo },
+            data: {
+              status:
+                preparedRefund.totalRefundedAmount >= preparedRefund.paidAmount
+                  ? PrismaOrderStatus.REFUND_ALL
+                  : PrismaOrderStatus.REFUND_PART
+            }
+          });
 
-        return createdRefund;
+          await this.createNotifyTask(tx, {
+            businessType: BusinessType.REFUND_ORDER,
+            businessNo: updatedRefund.platformRefundNo,
+            merchantId: preparedRefund.merchantId,
+            notifyUrl: preparedRefund.notifyUrl,
+            payload: {
+              eventType: "REFUND_SUCCESS",
+              platformRefundNo: updatedRefund.platformRefundNo,
+              merchantRefundNo: updatedRefund.merchantRefundNo,
+              platformOrderNo: updatedRefund.platformOrderNo,
+              appId: updatedRefund.appId,
+              refundAmount: updatedRefund.refundAmount,
+              status: updatedRefund.status,
+              reason: updatedRefund.reason,
+              successTime: updatedRefund.successTime?.toISOString() ?? null
+            }
+          });
+        }
+
+        return updatedRefund;
       });
 
       return this.toRefundRecord(refund);
     } catch (error) {
-      if (!this.isUniqueConstraintError(error)) {
-        throw error;
+      if (this.isUniqueConstraintError(error)) {
+        const conflicted = await this.prismaService.refundOrder.findUnique({
+          where: refundUniqueWhere
+        });
+
+        if (!conflicted) {
+          throw error;
+        }
+
+        this.assertSameRefundRequest(conflicted, input);
+
+        return this.toRefundRecord(conflicted);
       }
 
-      const conflicted = await this.prismaService.refundOrder.findUnique({
+      const existingFailedRefund = await this.prismaService.refundOrder.findUnique({
         where: refundUniqueWhere
       });
 
-      if (!conflicted) {
-        throw error;
+      if (existingFailedRefund?.status === PrismaRefundStatus.CREATED) {
+        await this.prismaService.refundOrder.update({
+          where: { id: existingFailedRefund.id },
+          data: {
+            status: PrismaRefundStatus.FAILED,
+            channelPayload: {
+              error:
+                error instanceof Error ? error.message : "refund request failed"
+            } as Prisma.InputJsonValue
+          }
+        });
       }
 
-      this.assertSameRefundRequest(conflicted, input);
-
-      return this.toRefundRecord(conflicted);
+      throw error;
     }
+  }
+
+  private async getLatestChannelTradeNo(
+    tx: Prisma.TransactionClient,
+    platformOrderNo: string
+  ): Promise<string | null> {
+    const latestAttempt = await tx.payAttempt.findFirst({
+      where: {
+        platformOrderNo,
+        channelTradeNo: {
+          not: null
+        }
+      },
+      orderBy: { createdAt: "desc" }
+    });
+
+    return latestAttempt?.channelTradeNo ?? null;
   }
 
   async getRefund(appId: string, merchantRefundNo: string): Promise<RefundRecord> {

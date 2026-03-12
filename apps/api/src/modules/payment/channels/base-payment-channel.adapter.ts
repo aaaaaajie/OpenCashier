@@ -3,6 +3,8 @@ import {
   ChannelOrderCloseResult,
   ChannelOrderQueryInput,
   ChannelOrderQueryResult,
+  ChannelRefundInput,
+  ChannelRefundResult,
   ChannelSessionPreview,
   ChannelSessionPreviewInput,
   PaymentChannelCatalogItem,
@@ -53,6 +55,12 @@ export abstract class BasePaymentChannelAdapter {
   async closeOrder(
     _input: ChannelOrderCloseInput
   ): Promise<ChannelOrderCloseResult | null> {
+    return null;
+  }
+
+  async refundOrder(
+    _input: ChannelRefundInput
+  ): Promise<ChannelRefundResult | null> {
     return null;
   }
 

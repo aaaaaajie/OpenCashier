@@ -7,6 +7,7 @@ import { BasePaymentChannelAdapter } from "./base-payment-channel.adapter";
 import {
   ChannelOrderCloseInput,
   ChannelOrderQueryInput,
+  ChannelRefundInput,
   ChannelSessionPreviewInput,
   StoredChannelAttempt
 } from "./payment-channel.types";
@@ -91,6 +92,16 @@ export class PaymentChannelRegistryService {
     }
 
     return adapter.closeOrder(input);
+  }
+
+  async refundOrder(input: ChannelRefundInput) {
+    const adapter = this.findByChannel(input.channel);
+
+    if (!adapter) {
+      throw new BadRequestException(`unsupported channel: ${input.channel}`);
+    }
+
+    return adapter.refundOrder(input);
   }
 
   restoreSessionFromAttempt(input: StoredChannelAttempt) {

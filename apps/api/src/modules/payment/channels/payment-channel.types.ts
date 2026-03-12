@@ -72,6 +72,24 @@ export interface ChannelOrderCloseResult {
   rawPayload?: Record<string, unknown>;
 }
 
+export interface ChannelRefundInput {
+  platformOrderNo: string;
+  platformRefundNo: string;
+  merchantRefundNo: string;
+  refundAmount: number;
+  reason: string;
+  channel: string;
+  channelTradeNo?: string | null;
+}
+
+export interface ChannelRefundResult {
+  refundStatus: "SUCCESS" | "PROCESSING";
+  channelRefundNo?: string;
+  channelTradeNo?: string;
+  successTime?: string;
+  rawPayload?: Record<string, unknown>;
+}
+
 export interface ProviderNotifyResult {
   eventId: string;
   platformOrderNo: string;

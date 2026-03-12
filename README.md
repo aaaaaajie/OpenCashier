@@ -85,6 +85,7 @@ pnpm smoke:merchant
 - 后台通知任务页读取 `/api/v1/admin/notifications`，支持手动补发 `POST /api/v1/admin/notifications/:notifyId/retry`
 - 商户请求现在要求 `HMAC-SHA256 + X-Timestamp + X-Nonce + Idempotency-Key`
 - 收银台 URL 现在使用签名 token，不再直接暴露平台单号
+- 退款不再本地伪成功；当前只会对已支持且已配置的真实渠道发起退款，不支持时返回 `CHANNEL_UNAVAILABLE`
 
 ## 接入文档
 

@@ -74,6 +74,13 @@ pnpm smoke:merchant
 - PayPal：预留官方 Node SDK 接入位
 - 微信支付：当前按 API 直连方式预留
 
+## 支付宝密钥配置
+
+- `ALIPAY_PRIVATE_KEY` 和 `ALIPAY_PUBLIC_KEY` 都支持两种写法：直接填 PEM 字符串，或填本地文件路径。
+- 直接填字符串时，建议写成单行并用 `\n` 表示换行。
+- 填路径时支持绝对路径，也支持相对项目根目录的路径，例如 `./certs/alipay/app-private-key.pem`。
+- 如果值看起来像路径但文件不存在，启动时会直接报错，避免把路径字符串误当成密钥内容。
+
 ## 当前数据状态
 
 - 商户应用、订单、退款已经切到 Prisma + PostgreSQL

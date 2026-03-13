@@ -5,7 +5,6 @@ import {
   NotFoundException,
   OnModuleInit
 } from "@nestjs/common";
-import { ConfigService } from "@nestjs/config";
 import {
   BusinessType,
   MerchantStatus as PrismaMerchantStatus,
@@ -19,6 +18,7 @@ import { createCashierToken } from "../../common/utils/cashier-token.util";
 import { PrismaService } from "../../prisma/prisma.service";
 import { PaymentChannelRegistryService } from "./channels/payment-channel-registry.service";
 import { PaymentAttemptService } from "./payment-attempt.service";
+import { PlatformConfigService } from "./platform-config.service";
 
 type OrderStatusValue =
   | "WAIT_PAY"
@@ -107,7 +107,7 @@ const ACTIVE_REFUND_STATUSES: PrismaRefundStatus[] = [
 export class PaymentStoreService implements OnModuleInit {
   constructor(
     private readonly prismaService: PrismaService,
-    private readonly configService: ConfigService,
+    private readonly platformConfigService: PlatformConfigService,
     private readonly paymentChannelRegistryService: PaymentChannelRegistryService,
     private readonly paymentAttemptService: PaymentAttemptService
   ) {}
@@ -1236,13 +1236,13 @@ export class PaymentStoreService implements OnModuleInit {
 
   private getCashierUrl(platformOrderNo: string, expireTime: Date): string {
     const secret =
-      this.configService.get<string>("APP_SECRET") ?? "local-dev-app-secret";
+      this.platformConfigService.get("APP_SECRET") ?? "local-dev-app-secret";
     const cashierToken = createCashierToken(secret, {
       platformOrderNo,
       expireTime: expireTime.toISOString()
     });
 
-    return `${this.configService.get<string>("WEB_BASE_URL") ?? "http://localhost:5173"}/cashier/${cashierToken}`;
+    return `${this.platformConfigService.get("WEB_BASE_URL") ?? "http://localhost:5173"}/cashier/${cashierToken}`;
   }
 
   private toApiSignType(signType: PrismaSignType): string {

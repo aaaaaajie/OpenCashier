@@ -80,9 +80,6 @@ export function AdminLayout() {
           >
             统一收银台
           </Typography.Title>
-          <Typography.Text style={{ color: "rgba(255,255,255,0.72)" }}>
-            Phase 1 Scaffold
-          </Typography.Text>
         </div>
         <Menu
           theme="dark"
@@ -103,20 +100,15 @@ export function AdminLayout() {
           }}
         >
           <Space direction="vertical" size={0}>
-            <Typography.Text strong>统一收银台后台</Typography.Text>
             <Breadcrumb
               items={[
-                { title: "Payment Platform" },
+                { title: "统一收银台" },
                 {
                   title:
                     breadcrumbTitleMap[location.pathname] ?? "总览"
                 }
               ]}
             />
-          </Space>
-          <Space>
-            <Tag color="processing">NestJS + Prisma</Tag>
-            <Tag color="success">React + Ant Design</Tag>
           </Space>
         </Header>
         <Content style={{ padding: 24 }}>

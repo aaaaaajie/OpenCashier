@@ -1,12 +1,12 @@
 services:
   postgres:
     image: postgres:16
-    container_name: payment-platform-postgres
+    container_name: cashier-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_DB: payment_platform
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: cashier
+      POSTGRES_USER: cashier
+      POSTGRES_PASSWORD: cashier
     ports:
       - "5432:5432"
     volumes:
@@ -14,7 +14,7 @@ services:
 
   redis:
     image: redis:7
-    container_name: payment-platform-redis
+    container_name: cashier-redis
     restart: unless-stopped
     ports:
       - "6379:6379"

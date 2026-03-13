@@ -245,3 +245,13 @@ model OperationAuditLog {
   @@index([objectType, objectId], map: "operation_audit_log_object_idx")
   @@map("operation_audit_log")
 }
+
+model PlatformConfig {
+  id        String   @id @default(uuid()) @db.Uuid
+  key       String   @unique @map("config_key")
+  value     Json
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("platform_config")
+}

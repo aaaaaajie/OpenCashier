@@ -1,8 +1,8 @@
 import { BadRequestException, Injectable } from "@nestjs/common";
-import { ConfigService } from "@nestjs/config";
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { isAbsolute, resolve } from "node:path";
+import { PlatformConfigService } from "../platform-config.service";
 
 interface AlipayProviderConfig {
   appId?: string;
@@ -13,7 +13,7 @@ interface AlipayProviderConfig {
 
 @Injectable()
 export class ChannelProviderConfigService {
-  constructor(private readonly configService: ConfigService) {}
+  constructor(private readonly platformConfigService: PlatformConfigService) {}
 
   hasAlipayConfig(): boolean {
     const config = this.getAlipayConfig();
@@ -22,36 +22,37 @@ export class ChannelProviderConfigService {
 
   getAlipayConfig(): AlipayProviderConfig {
     return {
-      appId: this.configService.get<string>("ALIPAY_APP_ID") ?? undefined,
+      appId: this.platformConfigService.get("ALIPAY_APP_ID"),
       privateKey: this.resolvePemEnv("ALIPAY_PRIVATE_KEY"),
       publicKey: this.resolvePemEnv("ALIPAY_PUBLIC_KEY"),
-      gateway:
-        this.configService.get<string>("ALIPAY_GATEWAY") ?? undefined
+      gateway: this.platformConfigService.get("ALIPAY_GATEWAY")
     };
   }
 
   hasStripeConfig(): boolean {
-    return Boolean(this.configService.get<string>("STRIPE_SECRET_KEY"));
+    return Boolean(this.platformConfigService.get("STRIPE_SECRET_KEY"));
   }
 
   hasPaypalConfig(): boolean {
     return Boolean(
-      this.configService.get<string>("PAYPAL_CLIENT_ID") &&
-        this.configService.get<string>("PAYPAL_CLIENT_SECRET")
+      this.platformConfigService.get("PAYPAL_CLIENT_ID") &&
+        this.platformConfigService.get("PAYPAL_CLIENT_SECRET")
     );
   }
 
   hasWechatPayConfig(): boolean {
     return Boolean(
-      this.configService.get<string>("WECHATPAY_APP_ID") &&
-        this.configService.get<string>("WECHATPAY_MCH_ID") &&
-        this.configService.get<string>("WECHATPAY_API_V3_KEY") &&
-        this.configService.get<string>("WECHATPAY_PRIVATE_KEY")
+      this.platformConfigService.get("WECHATPAY_APP_ID") &&
+        this.platformConfigService.get("WECHATPAY_MCH_ID") &&
+        this.platformConfigService.get("WECHATPAY_API_V3_KEY") &&
+        this.platformConfigService.get("WECHATPAY_PRIVATE_KEY")
     );
   }
 
-  private resolvePemEnv(key: string): string | undefined {
-    const rawValue = this.configService.get<string>(key);
+  private resolvePemEnv(
+    key: "ALIPAY_PRIVATE_KEY" | "ALIPAY_PUBLIC_KEY" | "WECHATPAY_PRIVATE_KEY"
+  ): string | undefined {
+    const rawValue = this.platformConfigService.get(key);
 
     if (!rawValue) {
       return undefined;

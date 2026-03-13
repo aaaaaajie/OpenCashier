@@ -7,11 +7,13 @@ import { ChannelProviderConfigService } from "./channels/channel-provider-config
 import { PaymentChannelRegistryService } from "./channels/payment-channel-registry.service";
 import { PaymentAttemptService } from "./payment-attempt.service";
 import { PaymentStoreService } from "./payment-store.service";
+import { PlatformConfigService } from "./platform-config.service";
 
 @Global()
 @Module({
   providers: [
     PaymentStoreService,
+    PlatformConfigService,
     ChannelProviderConfigService,
     WechatPayChannelAdapter,
     AlipayChannelAdapter,
@@ -22,6 +24,7 @@ import { PaymentStoreService } from "./payment-store.service";
   ],
   exports: [
     PaymentStoreService,
+    PlatformConfigService,
     PaymentChannelRegistryService,
     PaymentAttemptService,
     AlipayChannelAdapter

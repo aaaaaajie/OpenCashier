@@ -1,9 +1,9 @@
 import { Injectable, NotFoundException } from "@nestjs/common";
-import { ConfigService } from "@nestjs/config";
 import { parseCashierToken } from "../../common/utils/cashier-token.util";
 import { PaymentChannelRegistryService } from "../payment/channels/payment-channel-registry.service";
 import { PaymentAttemptService } from "../payment/payment-attempt.service";
 import { PaymentStoreService } from "../payment/payment-store.service";
+import { PlatformConfigService } from "../payment/platform-config.service";
 
 @Injectable()
 export class CashierService {
@@ -11,12 +11,12 @@ export class CashierService {
     private readonly paymentStoreService: PaymentStoreService,
     private readonly paymentChannelRegistryService: PaymentChannelRegistryService,
     private readonly paymentAttemptService: PaymentAttemptService,
-    private readonly configService: ConfigService
+    private readonly platformConfigService: PlatformConfigService
   ) {}
 
   async getCashierSession(cashierToken: string) {
     const appSecret =
-      this.configService.get<string>("APP_SECRET") ?? "local-dev-app-secret";
+      this.platformConfigService.get("APP_SECRET") ?? "local-dev-app-secret";
     const tokenPayload = parseCashierToken(appSecret, cashierToken);
 
     if (!tokenPayload) {
@@ -157,28 +157,8 @@ export class CashierService {
     channel: string,
     fallbackNotifyUrl: string
   ): string {
-    if (channel.startsWith("alipay_")) {
-      const directNotifyUrl = this.configService.get<string>("ALIPAY_NOTIFY_URL");
-
-      if (directNotifyUrl?.trim()) {
-        return directNotifyUrl.trim();
-      }
-
-      const alipayNotifyBaseUrl =
-        this.configService.get<string>("ALIPAY_NOTIFY_BASE_URL");
-
-      if (alipayNotifyBaseUrl?.trim()) {
-        return (
-          this.paymentChannelRegistryService.buildNotifyUrl(
-            channel,
-            alipayNotifyBaseUrl.trim()
-          ) ?? fallbackNotifyUrl
-        );
-      }
-    }
-
     const appBaseUrl =
-      this.configService.get<string>("APP_BASE_URL") ?? "http://localhost:3000";
+      this.platformConfigService.get("APP_BASE_URL") ?? "http://localhost:3000";
 
     return (
       this.paymentChannelRegistryService.buildNotifyUrl(channel, appBaseUrl) ??

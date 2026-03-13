@@ -41,6 +41,8 @@ cp .env.example .env
 
 根目录 `.env` 会同时被 API 和 Web 读取，前端只会暴露 `VITE_` 前缀变量。
 `APP_SECRET` 用于签发公开收银台 token，开发环境可先用 `.env.example` 的默认值。
+`PLATFORM_CONFIG_MASTER_KEY` 用于加密后台写入数据库的私钥和 Secret，生产环境请务必替换。
+支付渠道参数已经迁移到后台数据库，SDK 不再直接从环境变量读取 `ALIPAY_*`、`STRIPE_*`、`PAYPAL_*`、`WECHATPAY_*`。
 
 4. 生成 Prisma Client 并运行开发迁移
 
@@ -78,24 +80,20 @@ pnpm smoke:merchant
 
 - 当前项目接的是“公钥模式”，不是“证书模式”。
 - 也就是说，当前主要配置是 `ALIPAY_APP_ID`、`ALIPAY_PRIVATE_KEY`、`ALIPAY_PUBLIC_KEY`、`ALIPAY_GATEWAY`。
-- 如果你本地联调支付宝回调，还可以额外配置 `ALIPAY_NOTIFY_URL` 或 `ALIPAY_NOTIFY_BASE_URL`。
 - 当前代码没有接 `appCertPath`、`alipayRootCertPath`、`alipayPublicCertPath` 这一套证书模式参数；如果后面要切证书模式，需要单独扩展。
 - `ALIPAY_PRIVATE_KEY` 和 `ALIPAY_PUBLIC_KEY` 都支持两种写法：直接填 PEM 字符串，或填本地文件路径。
 - 直接填字符串时，建议写成单行并用 `\n` 表示换行。
 - 填路径时支持绝对路径，也支持相对项目根目录的路径，例如 `./certs/alipay/app-private-key.pem`。
 - 如果值看起来像路径但文件不存在，启动时会直接报错，避免把路径字符串误当成密钥内容。
+- 后台“系统设置”页现在可以新增和维护这些参数；支付渠道运行时只读取数据库配置。
+- 私钥和 Secret 在界面上不会回显当前值；如果配置了 `PLATFORM_CONFIG_MASTER_KEY`，它们会以加密形式入库。
+- 支付宝异步回调地址由系统基于 `APP_BASE_URL` 内置生成，不再单独配置。
 
 变量说明：
 
 - `ALIPAY_APP_ID`
   来源：支付宝开放平台创建“支付应用”后，在应用详情里获取应用 ID。
   说明：这是支付宝分配给应用的唯一标识，不是商户号，也不是 PID。
-- `ALIPAY_NOTIFY_URL`
-  来源：你本地启动隧道后拿到的完整公网回调地址，例如 `https://abc.trycloudflare.com/api/v1/notify/alipay`。
-  说明：优先级最高；如果配置了它，项目会直接把这个完整地址发给支付宝。
-- `ALIPAY_NOTIFY_BASE_URL`
-  来源：你本地启动隧道后拿到的公网基础地址，例如 `https://abc.trycloudflare.com`。
-  说明：如果没配 `ALIPAY_NOTIFY_URL`，程序会自动拼成 `/api/v1/notify/alipay`。
 - `ALIPAY_PRIVATE_KEY`
   来源：你本地生成的“应用私钥”；对应的“应用公钥”需要上传到支付宝开放平台的接口加签配置里。
   说明：服务端签名时使用，必须保存在你自己的服务端，不能泄露。
@@ -128,16 +126,16 @@ pnpm dev:api
 再启动隧道：
 
 ```bash
-pnpm tunnel:alipay -- --write-env
+pnpm tunnel:alipay
 ```
 
 脚本会自动：
 
 - 优先尝试 `cloudflared`，其次 `localhost.run`，最后 `localtunnel`
 - 输出 `Public URL` 和最终的 `Notify URL`
-- 把 `ALIPAY_NOTIFY_URL=https://.../api/v1/notify/alipay` 写回根目录 `.env`
+- 确认这个公网域名已经配置到平台基础配置 `APP_BASE_URL`
 
-如果你不用 `--write-env`，也可以手工把脚本输出的 `Notify URL` 填到 `.env` 里。
+虽然脚本仍保留 `--write-env` 参数，但现在写入的是 `.env` 里的 `APP_BASE_URL`。
 
 ## 当前数据状态
 

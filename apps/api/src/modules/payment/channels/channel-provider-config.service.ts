@@ -11,42 +11,107 @@ interface AlipayProviderConfig {
   gateway?: string;
 }
 
+interface StripeProviderConfig {
+  secretKey?: string;
+}
+
+interface PaypalProviderConfig {
+  clientId?: string;
+  clientSecret?: string;
+}
+
+interface WechatPayProviderConfig {
+  appId?: string;
+  mchId?: string;
+  apiV3Key?: string;
+  privateKey?: string;
+}
+
 @Injectable()
 export class ChannelProviderConfigService {
   constructor(private readonly platformConfigService: PlatformConfigService) {}
 
   hasAlipayConfig(): boolean {
     const config = this.getAlipayConfig();
-    return Boolean(config.appId && config.privateKey);
+    return Boolean(config.appId && config.privateKey && config.gateway);
   }
 
   getAlipayConfig(): AlipayProviderConfig {
     return {
-      appId: this.platformConfigService.get("ALIPAY_APP_ID"),
+      appId: this.resolveTextConfig("ALIPAY_APP_ID"),
       privateKey: this.resolvePemEnv("ALIPAY_PRIVATE_KEY"),
       publicKey: this.resolvePemEnv("ALIPAY_PUBLIC_KEY"),
-      gateway: this.platformConfigService.get("ALIPAY_GATEWAY")
+      gateway: this.resolveTextConfig("ALIPAY_GATEWAY")
+    };
+  }
+
+  getAlipaySdkConfig(): {
+    appId: string;
+    privateKey: string;
+    publicKey?: string;
+    gateway: string;
+  } {
+    const config = this.getAlipayConfig();
+    console.log(config, 1111);
+    const missingKeys = [
+      !config.appId ? "ALIPAY_APP_ID" : undefined,
+      !config.privateKey ? "ALIPAY_PRIVATE_KEY" : undefined,
+      !config.gateway ? "ALIPAY_GATEWAY" : undefined
+    ].filter((item): item is string => Boolean(item));
+
+    if (missingKeys.length > 0) {
+      throw new BadRequestException(
+        `missing alipay sdk configuration: ${missingKeys.join(", ")}`
+      );
+    }
+
+    return {
+      appId: config.appId!,
+      privateKey: config.privateKey!,
+      publicKey: config.publicKey,
+      gateway: config.gateway!
     };
   }
 
   hasStripeConfig(): boolean {
-    return Boolean(this.platformConfigService.get("STRIPE_SECRET_KEY"));
+    return Boolean(this.getStripeConfig().secretKey);
+  }
+
+  getStripeConfig(): StripeProviderConfig {
+    return {
+      secretKey: this.resolveTextConfig("STRIPE_SECRET_KEY")
+    };
   }
 
   hasPaypalConfig(): boolean {
-    return Boolean(
-      this.platformConfigService.get("PAYPAL_CLIENT_ID") &&
-        this.platformConfigService.get("PAYPAL_CLIENT_SECRET")
-    );
+    const config = this.getPaypalConfig();
+    return Boolean(config.clientId && config.clientSecret);
+  }
+
+  getPaypalConfig(): PaypalProviderConfig {
+    return {
+      clientId: this.resolveTextConfig("PAYPAL_CLIENT_ID"),
+      clientSecret: this.resolveTextConfig("PAYPAL_CLIENT_SECRET")
+    };
   }
 
   hasWechatPayConfig(): boolean {
+    const config = this.getWechatPayConfig();
     return Boolean(
-      this.platformConfigService.get("WECHATPAY_APP_ID") &&
-        this.platformConfigService.get("WECHATPAY_MCH_ID") &&
-        this.platformConfigService.get("WECHATPAY_API_V3_KEY") &&
-        this.platformConfigService.get("WECHATPAY_PRIVATE_KEY")
+      config.appId &&
+        config.mchId &&
+        config.apiV3Key &&
+        config.privateKey
     );
+  }
+
+  getWechatPayConfig(): WechatPayProviderConfig {
+    return {
+      appId: this.resolveTextConfig("WECHATPAY_APP_ID"),
+      mchId: this.resolveTextConfig("WECHATPAY_MCH_ID"),
+      apiV3Key: this.resolveTextConfig("WECHATPAY_API_V3_KEY"),
+      privateKey: this.resolvePemEnv("WECHATPAY_PRIVATE_KEY")
+    };
   }
 
   private resolvePemEnv(
@@ -81,6 +146,11 @@ export class ChannelProviderConfigService {
     }
 
     return value;
+  }
+
+  private resolveTextConfig(key: string): string | undefined {
+    const value = this.platformConfigService.get(key);
+    return value?.trim() || undefined;
   }
 
   private resolveExistingPath(value: string): string | undefined {

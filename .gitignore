@@ -14,3 +14,4 @@ apps/api/generated
 apps/api/prisma/dev.db
 plan*
 skills
+.codex

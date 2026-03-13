@@ -349,11 +349,7 @@ export class AlipayChannelAdapter extends BasePaymentChannelAdapter {
   }
 
   private async createClient(): Promise<AlipayClientLike> {
-    const config = this.channelProviderConfigService.getAlipayConfig();
-
-    if (!config.appId || !config.privateKey) {
-      throw new BadRequestException("missing alipay configuration");
-    }
+    const config = this.channelProviderConfigService.getAlipaySdkConfig();
 
     // Preserve native dynamic import so the ESM-only SDK can be loaded from this CJS Nest app.
     const loadModule = new Function(

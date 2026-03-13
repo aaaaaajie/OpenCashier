@@ -152,4 +152,4 @@ pnpm tunnel:alipay
 
 ## 接入文档
 
-- 商户签名与自测说明：[merchant-api-integration.md](/Users/huoshijie/code/payment-platform/docs/merchant-api-integration.md)
+- 外部业务系统接入教程：[merchant-api-integration.md](/Users/huoshijie/code/payment-platform/docs/merchant-api-integration.md)

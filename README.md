@@ -76,10 +76,34 @@ pnpm smoke:merchant
 
 ## 支付宝密钥配置
 
+- 当前项目接的是“公钥模式”，不是“证书模式”。
+- 也就是说，当前只需要 `ALIPAY_APP_ID`、`ALIPAY_PRIVATE_KEY`、`ALIPAY_PUBLIC_KEY`、`ALIPAY_GATEWAY`。
+- 当前代码没有接 `appCertPath`、`alipayRootCertPath`、`alipayPublicCertPath` 这一套证书模式参数；如果后面要切证书模式，需要单独扩展。
 - `ALIPAY_PRIVATE_KEY` 和 `ALIPAY_PUBLIC_KEY` 都支持两种写法：直接填 PEM 字符串，或填本地文件路径。
 - 直接填字符串时，建议写成单行并用 `\n` 表示换行。
 - 填路径时支持绝对路径，也支持相对项目根目录的路径，例如 `./certs/alipay/app-private-key.pem`。
 - 如果值看起来像路径但文件不存在，启动时会直接报错，避免把路径字符串误当成密钥内容。
+
+变量说明：
+
+- `ALIPAY_APP_ID`
+  来源：支付宝开放平台创建“支付应用”后，在应用详情里获取应用 ID。
+  说明：这是支付宝分配给应用的唯一标识，不是商户号，也不是 PID。
+- `ALIPAY_PRIVATE_KEY`
+  来源：你本地生成的“应用私钥”；对应的“应用公钥”需要上传到支付宝开放平台的接口加签配置里。
+  说明：服务端签名时使用，必须保存在你自己的服务端，不能泄露。
+- `ALIPAY_PUBLIC_KEY`
+  来源：支付宝开放平台“开发设置 / 接口加签方式”里的“支付宝公钥查看”。
+  说明：这是支付宝平台公钥，用于验签支付宝返回和异步通知；不是你自己的应用公钥。
+- `ALIPAY_GATEWAY`
+  来源：支付宝官方网关地址。
+  说明：沙箱常用 `https://openapi.alipaydev.com/gateway.do`；生产环境常用 `https://openapi.alipay.com/gateway.do`。
+
+补充说明：
+
+- 你会看到支付宝平台里还有“应用公钥”这个概念，但当前项目不需要单独配置 `ALIPAY_APP_PUBLIC_KEY`。
+- 原因是公钥模式下，平台保存你的应用公钥；你服务端只需要持有应用私钥，并持有支付宝公钥用于验签。
+- 如果后面改成证书模式，才会变成“应用公钥证书 + 支付宝公钥证书 + 支付宝根证书”这一套。
 
 ## 当前数据状态
 

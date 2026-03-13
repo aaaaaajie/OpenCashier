@@ -77,7 +77,8 @@ pnpm smoke:merchant
 ## 支付宝密钥配置
 
 - 当前项目接的是“公钥模式”，不是“证书模式”。
-- 也就是说，当前只需要 `ALIPAY_APP_ID`、`ALIPAY_PRIVATE_KEY`、`ALIPAY_PUBLIC_KEY`、`ALIPAY_GATEWAY`。
+- 也就是说，当前主要配置是 `ALIPAY_APP_ID`、`ALIPAY_PRIVATE_KEY`、`ALIPAY_PUBLIC_KEY`、`ALIPAY_GATEWAY`。
+- 如果你本地联调支付宝回调，还可以额外配置 `ALIPAY_NOTIFY_URL` 或 `ALIPAY_NOTIFY_BASE_URL`。
 - 当前代码没有接 `appCertPath`、`alipayRootCertPath`、`alipayPublicCertPath` 这一套证书模式参数；如果后面要切证书模式，需要单独扩展。
 - `ALIPAY_PRIVATE_KEY` 和 `ALIPAY_PUBLIC_KEY` 都支持两种写法：直接填 PEM 字符串，或填本地文件路径。
 - 直接填字符串时，建议写成单行并用 `\n` 表示换行。
@@ -89,6 +90,12 @@ pnpm smoke:merchant
 - `ALIPAY_APP_ID`
   来源：支付宝开放平台创建“支付应用”后，在应用详情里获取应用 ID。
   说明：这是支付宝分配给应用的唯一标识，不是商户号，也不是 PID。
+- `ALIPAY_NOTIFY_URL`
+  来源：你本地启动隧道后拿到的完整公网回调地址，例如 `https://abc.trycloudflare.com/api/v1/notify/alipay`。
+  说明：优先级最高；如果配置了它，项目会直接把这个完整地址发给支付宝。
+- `ALIPAY_NOTIFY_BASE_URL`
+  来源：你本地启动隧道后拿到的公网基础地址，例如 `https://abc.trycloudflare.com`。
+  说明：如果没配 `ALIPAY_NOTIFY_URL`，程序会自动拼成 `/api/v1/notify/alipay`。
 - `ALIPAY_PRIVATE_KEY`
   来源：你本地生成的“应用私钥”；对应的“应用公钥”需要上传到支付宝开放平台的接口加签配置里。
   说明：服务端签名时使用，必须保存在你自己的服务端，不能泄露。
@@ -97,13 +104,40 @@ pnpm smoke:merchant
   说明：这是支付宝平台公钥，用于验签支付宝返回和异步通知；不是你自己的应用公钥。
 - `ALIPAY_GATEWAY`
   来源：支付宝官方网关地址。
-  说明：沙箱常用 `https://openapi.alipaydev.com/gateway.do`；生产环境常用 `https://openapi.alipay.com/gateway.do`。
+  说明：以支付宝开放平台当前展示为准；你现在提供的沙箱网关是 `https://openapi-sandbox.dl.alipaydev.com/gateway.do`，生产环境通常是 `https://openapi.alipay.com/gateway.do`。
 
 补充说明：
 
 - 你会看到支付宝平台里还有“应用公钥”这个概念，但当前项目不需要单独配置 `ALIPAY_APP_PUBLIC_KEY`。
 - 原因是公钥模式下，平台保存你的应用公钥；你服务端只需要持有应用私钥，并持有支付宝公钥用于验签。
 - 如果后面改成证书模式，才会变成“应用公钥证书 + 支付宝公钥证书 + 支付宝根证书”这一套。
+
+## 本地支付宝回调隧道
+
+- 支付宝要求回调地址必须是公网 HTTPS 地址；本地开发时，可以通过隧道工具临时暴露 `POST /api/v1/notify/alipay`。
+- 回调地址格式会像这样：`https://随机子域名.trycloudflare.com/api/v1/notify/alipay`。
+- 这个地址不是项目自己生成的，而是由 `cloudflared`、`localhost.run` 或 `localtunnel` 这类外部隧道服务分配。
+- 项目里已经提供了本地脚本，会自动检测可用工具并输出正确的支付宝回调地址。
+
+先启动 API：
+
+```bash
+pnpm dev:api
+```
+
+再启动隧道：
+
+```bash
+pnpm tunnel:alipay -- --write-env
+```
+
+脚本会自动：
+
+- 优先尝试 `cloudflared`，其次 `localhost.run`，最后 `localtunnel`
+- 输出 `Public URL` 和最终的 `Notify URL`
+- 把 `ALIPAY_NOTIFY_URL=https://.../api/v1/notify/alipay` 写回根目录 `.env`
+
+如果你不用 `--write-env`，也可以手工把脚本输出的 `Notify URL` 填到 `.env` 里。
 
 ## 当前数据状态
 

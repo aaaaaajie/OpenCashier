@@ -60,8 +60,6 @@ export class CashierService {
       };
     }
 
-    const appBaseUrl =
-      this.configService.get<string>("APP_BASE_URL") ?? "http://localhost:3000";
     const channels = await Promise.all(
       order.allowedChannels.map(async (channel) => {
         const catalog =
@@ -108,11 +106,7 @@ export class CashierService {
             currency: order.currency,
             subject: order.subject,
             description: order.description,
-            notifyUrl:
-              this.paymentChannelRegistryService.buildNotifyUrl(
-                channel,
-                appBaseUrl
-              ) ?? order.notifyUrl,
+            notifyUrl: this.resolveProviderNotifyUrl(channel, order.notifyUrl),
             returnUrl: order.returnUrl,
             expireTime: order.expireTime,
             channel,
@@ -157,5 +151,38 @@ export class CashierService {
       order,
       channels
     };
+  }
+
+  private resolveProviderNotifyUrl(
+    channel: string,
+    fallbackNotifyUrl: string
+  ): string {
+    if (channel.startsWith("alipay_")) {
+      const directNotifyUrl = this.configService.get<string>("ALIPAY_NOTIFY_URL");
+
+      if (directNotifyUrl?.trim()) {
+        return directNotifyUrl.trim();
+      }
+
+      const alipayNotifyBaseUrl =
+        this.configService.get<string>("ALIPAY_NOTIFY_BASE_URL");
+
+      if (alipayNotifyBaseUrl?.trim()) {
+        return (
+          this.paymentChannelRegistryService.buildNotifyUrl(
+            channel,
+            alipayNotifyBaseUrl.trim()
+          ) ?? fallbackNotifyUrl
+        );
+      }
+    }
+
+    const appBaseUrl =
+      this.configService.get<string>("APP_BASE_URL") ?? "http://localhost:3000";
+
+    return (
+      this.paymentChannelRegistryService.buildNotifyUrl(channel, appBaseUrl) ??
+      fallbackNotifyUrl
+    );
   }
 }

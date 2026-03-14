@@ -1,9 +1,14 @@
 import { Injectable } from "@nestjs/common";
+import { createHash } from "node:crypto";
 import { Prisma } from "@prisma/client";
 import { PrismaService } from "../../prisma/prisma.service";
 import { AlipayChannelAdapter } from "../payment/channels/adapters/alipay-channel.adapter";
+import type { ProviderNotifyResult } from "../payment/channels/payment-channel.types";
 import { PaymentAttemptService } from "../payment/payment-attempt.service";
 import { PaymentStoreService } from "../payment/payment-store.service";
+
+const ALIPAY_NOTIFY_CHANNEL = "alipay_notify";
+const ALIPAY_NOTIFY_EVENT_TYPE = "TRADE_NOTIFY";
 
 @Injectable()
 export class NotifyService {
@@ -15,111 +20,188 @@ export class NotifyService {
   ) {}
 
   async handleAlipayNotify(payload: Record<string, unknown>): Promise<"success"> {
-    const event = await this.alipayChannelAdapter.verifyNotify(payload);
-    const eventLog = await this.createChannelEventLog(event.eventId, payload);
+    const channelEventId = this.resolveChannelEventId(payload);
+    const eventLog = await this.upsertChannelEventLog(channelEventId, payload);
 
-    if (!eventLog) {
+    if (this.hasProcessedSuccessfully(eventLog.processedResult)) {
       return "success";
+    }
+
+    let event: ProviderNotifyResult;
+
+    try {
+      event = await this.alipayChannelAdapter.verifyNotify(payload);
+    } catch (error) {
+      await this.updateChannelEventLog(eventLog.id, {
+        processedResult: {
+          status: "VERIFY_FAILED",
+          error: this.toErrorMessage(error, "alipay notify verification failed"),
+          failedAt: new Date().toISOString()
+        }
+      });
+      throw error;
     }
 
     let orderStatus = "UNCHANGED";
     let attemptNo: string | undefined;
 
-    const attempt = event.channelTradeNo
-      ? await this.paymentAttemptService.findAttemptByChannelTradeNo(
-          event.channelTradeNo
-        )
-      : await this.paymentAttemptService.findLatestAttemptForOrder(
-          event.platformOrderNo,
-          ["alipay_qr", "alipay_page", "alipay_wap"]
-        );
+    try {
+      const attempt = event.channelTradeNo
+        ? await this.paymentAttemptService.findAttemptByChannelTradeNo(
+            event.channelTradeNo
+          )
+        : await this.paymentAttemptService.findLatestAttemptForOrder(
+            event.platformOrderNo,
+            ["alipay_qr", "alipay_page", "alipay_wap"]
+          );
 
-    if (attempt) {
-      attemptNo = attempt.attemptNo;
-    }
-
-    if (event.tradeStatus === "SUCCESS") {
-      if (attemptNo) {
-        await this.paymentAttemptService.markAttemptSuccess(attemptNo, {
-          channelTradeNo: event.channelTradeNo,
-          successTime: event.paidTime,
-          channelPayload: event.rawPayload
-        });
+      if (attempt) {
+        attemptNo = attempt.attemptNo;
       }
 
-      const order = await this.paymentStoreService.markOrderPaidFromChannel({
-        platformOrderNo: event.platformOrderNo,
-        paidAmount: event.paidAmount,
-        successChannel: attempt?.channel,
-        paidTime: event.paidTime
-      });
-
-      orderStatus = order.status;
-    } else if (event.tradeStatus === "CLOSED") {
-      if (attemptNo) {
-        await this.paymentAttemptService.markAttemptCancelled(attemptNo, {
-          failMessage: "closed by alipay notify"
-        });
-      }
-
-      const order = await this.paymentStoreService.markOrderClosedFromChannel({
-        platformOrderNo: event.platformOrderNo,
-        closeReason: "ALIPAY_NOTIFY_CLOSED"
-      });
-
-      orderStatus = order.status;
-    }
-
-    await this.prismaService.channelEventLog.update({
-      where: {
-        channel_channelEventId: {
-          channel: "alipay_notify",
-          channelEventId: event.eventId
+      if (event.tradeStatus === "SUCCESS") {
+        if (attemptNo) {
+          await this.paymentAttemptService.markAttemptSuccess(attemptNo, {
+            channelTradeNo: event.channelTradeNo,
+            successTime: event.paidTime
+          });
         }
-      },
-      data: {
+
+        const order = await this.paymentStoreService.markOrderPaidFromChannel({
+          platformOrderNo: event.platformOrderNo,
+          paidAmount: event.paidAmount,
+          successChannel: attempt?.channel,
+          paidTime: event.paidTime
+        });
+
+        orderStatus = order.status;
+      } else if (event.tradeStatus === "CLOSED") {
+        if (attemptNo) {
+          await this.paymentAttemptService.markAttemptCancelled(attemptNo, {
+            failMessage: "closed by alipay notify"
+          });
+        }
+
+        const order = await this.paymentStoreService.markOrderClosedFromChannel({
+          platformOrderNo: event.platformOrderNo,
+          closeReason: "ALIPAY_NOTIFY_CLOSED"
+        });
+
+        orderStatus = order.status;
+      }
+
+      await this.updateChannelEventLog(eventLog.id, {
+        resourceNo: event.platformOrderNo,
+        verifyResult: true,
         processedResult: {
+          status: "PROCESSED",
           tradeStatus: event.tradeStatus,
           orderStatus,
           attemptNo: attemptNo ?? null,
           processedAt: new Date().toISOString()
-        } as Prisma.InputJsonValue
-      }
-    });
+        }
+      });
+    } catch (error) {
+      await this.updateChannelEventLog(eventLog.id, {
+        resourceNo: event.platformOrderNo,
+        verifyResult: true,
+        processedResult: {
+          status: "PROCESS_FAILED",
+          tradeStatus: event.tradeStatus,
+          attemptNo: attemptNo ?? null,
+          error: this.toErrorMessage(error, "alipay notify processing failed"),
+          failedAt: new Date().toISOString()
+        }
+      });
+      throw error;
+    }
 
     return "success";
   }
 
-  private async createChannelEventLog(
-    eventId: string,
+  private async upsertChannelEventLog(
+    channelEventId: string,
     payload: Record<string, unknown>
   ) {
-    try {
-      return await this.prismaService.channelEventLog.create({
-        data: {
-          channel: "alipay_notify",
-          channelEventId: eventId,
-          eventType: "TRADE_NOTIFY",
-          resourceNo: String(payload.out_trade_no ?? ""),
-          verifyResult: true,
-          rawPayload: payload as Prisma.InputJsonValue
+    return this.prismaService.channelEventLog.upsert({
+      where: {
+        channel_channelEventId: {
+          channel: ALIPAY_NOTIFY_CHANNEL,
+          channelEventId
         }
-      });
-    } catch (error) {
-      if (this.isUniqueConstraintError(error)) {
-        return null;
+      },
+      create: {
+        channel: ALIPAY_NOTIFY_CHANNEL,
+        channelEventId,
+        eventType: ALIPAY_NOTIFY_EVENT_TYPE,
+        resourceNo: this.asOptionalString(payload.out_trade_no ?? payload.outTradeNo),
+        rawPayload: payload as Prisma.InputJsonValue
+      },
+      update: {
+        resourceNo:
+          this.asOptionalString(payload.out_trade_no ?? payload.outTradeNo) ?? undefined,
+        rawPayload: payload as Prisma.InputJsonValue
       }
-
-      throw error;
-    }
+    });
   }
 
-  private isUniqueConstraintError(error: unknown): boolean {
-    return (
-      typeof error === "object" &&
-      error !== null &&
-      "code" in error &&
-      error.code === "P2002"
-    );
+  private async updateChannelEventLog(
+    eventLogId: string,
+    input: {
+      resourceNo?: string;
+      verifyResult?: boolean;
+      processedResult: Record<string, unknown>;
+    }
+  ) {
+    await this.prismaService.channelEventLog.update({
+      where: { id: eventLogId },
+      data: {
+        resourceNo: input.resourceNo,
+        verifyResult: input.verifyResult,
+        processedResult: input.processedResult as Prisma.InputJsonValue
+      }
+    });
+  }
+
+  private hasProcessedSuccessfully(processedResult: Prisma.JsonValue | null): boolean {
+    return this.readProcessedStatus(processedResult) === "PROCESSED";
+  }
+
+  private readProcessedStatus(
+    processedResult: Prisma.JsonValue | null
+  ): string | undefined {
+    if (
+      !processedResult ||
+      typeof processedResult !== "object" ||
+      Array.isArray(processedResult)
+    ) {
+      return undefined;
+    }
+
+    const status = (processedResult as Record<string, unknown>).status;
+    return typeof status === "string" ? status : undefined;
+  }
+
+  private resolveChannelEventId(payload: Record<string, unknown>): string {
+    const eventId = this.asOptionalString(payload.notify_id ?? payload.notifyId);
+
+    if (eventId) {
+      return eventId;
+    }
+
+    const payloadDigest = createHash("sha256")
+      .update(JSON.stringify(payload))
+      .digest("hex")
+      .slice(0, 24);
+
+    return `missing:${payloadDigest}`;
+  }
+
+  private asOptionalString(value: unknown): string | undefined {
+    return typeof value === "string" && value.trim().length > 0 ? value : undefined;
+  }
+
+  private toErrorMessage(error: unknown, fallback: string): string {
+    return error instanceof Error && error.message ? error.message : fallback;
   }
 }

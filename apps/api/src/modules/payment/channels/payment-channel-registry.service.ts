@@ -9,6 +9,8 @@ import {
   ChannelOrderQueryInput,
   ChannelRefundInput,
   ChannelSessionPreviewInput,
+  PaymentProviderCode,
+  ProviderConfigValidationResult,
   StoredChannelAttempt
 } from "./payment-channel.types";
 
@@ -139,7 +141,25 @@ export class PaymentChannelRegistryService {
     return adapter.buildFailedSession(input, reason);
   }
 
+  validateProviderConfig(
+    providerCode: PaymentProviderCode
+  ): Promise<ProviderConfigValidationResult> {
+    const adapter = this.findByProviderCode(providerCode);
+
+    if (!adapter) {
+      throw new BadRequestException(`unsupported provider: ${providerCode}`);
+    }
+
+    return adapter.validateConfig();
+  }
+
   private findByChannel(channel: string): BasePaymentChannelAdapter | undefined {
     return this.adapters.find((adapter) => adapter.supportsChannel(channel));
+  }
+
+  private findByProviderCode(
+    providerCode: PaymentProviderCode
+  ): BasePaymentChannelAdapter | undefined {
+    return this.adapters.find((adapter) => adapter.providerCode === providerCode);
   }
 }

@@ -1,4 +1,14 @@
-export type PlatformConfigInputType = "TEXT" | "TEXTAREA" | "PASSWORD";
+export type PlatformConfigInputType =
+  | "TEXT"
+  | "TEXTAREA"
+  | "PASSWORD"
+  | "SELECT"
+  | "MULTI_SELECT";
+
+export interface PlatformConfigItemOption {
+  label: string;
+  value: string;
+}
 
 export interface PlatformConfigItemDefinition {
   key: string;
@@ -7,6 +17,7 @@ export interface PlatformConfigItemDefinition {
   secret: boolean;
   inputType: PlatformConfigInputType;
   placeholder?: string;
+  options?: PlatformConfigItemOption[];
 }
 
 export interface PlatformConfigGroupDefinition {
@@ -51,8 +62,48 @@ export const PLATFORM_CONFIG_GROUPS: PlatformConfigGroupDefinition[] = [
   {
     key: "alipay",
     label: "支付宝配置",
-    description: "当前接入的是支付宝公钥模式，支持直接粘贴 PEM，也支持填写服务器本地文件路径。",
+    description:
+      "支持普通公钥模式和证书模式；私钥、公钥、证书都支持直接粘贴内容或填写服务器本地文件路径。",
     items: [
+      {
+        key: "ALIPAY_AUTH_MODE",
+        label: "接入方式",
+        description: "选择普通公钥模式或证书模式。",
+        secret: false,
+        inputType: "SELECT",
+        options: [
+          {
+            label: "密钥模式",
+            value: "KEY"
+          },
+          {
+            label: "证书模式",
+            value: "CERT"
+          }
+        ]
+      },
+      {
+        key: "ALIPAY_PRODUCT_CAPABILITIES",
+        label: "已开通产品",
+        description:
+          "用于统一收银台在二维码、电脑网站支付、手机网站支付之间做路由和回退；建议按支付宝开放平台实际签约产品勾选。",
+        secret: false,
+        inputType: "MULTI_SELECT",
+        options: [
+          {
+            label: "当面付二维码",
+            value: "QR"
+          },
+          {
+            label: "电脑网站支付",
+            value: "PAGE"
+          },
+          {
+            label: "手机网站支付",
+            value: "WAP"
+          }
+        ]
+      },
       {
         key: "ALIPAY_APP_ID",
         label: "应用 ID",
@@ -72,6 +123,27 @@ export const PLATFORM_CONFIG_GROUPS: PlatformConfigGroupDefinition[] = [
         key: "ALIPAY_PUBLIC_KEY",
         label: "支付宝公钥",
         description: "用于验签支付宝返回结果；支持 PEM 内容或文件路径。",
+        secret: false,
+        inputType: "TEXTAREA"
+      },
+      {
+        key: "ALIPAY_APP_CERT",
+        label: "应用公钥证书",
+        description: "证书模式下使用；支持直接粘贴 CRT 内容，或填写服务器可访问的证书文件路径。",
+        secret: false,
+        inputType: "TEXTAREA"
+      },
+      {
+        key: "ALIPAY_PUBLIC_CERT",
+        label: "支付宝公钥证书",
+        description: "证书模式下使用；支持直接粘贴 CRT 内容，或填写服务器可访问的证书文件路径。",
+        secret: false,
+        inputType: "TEXTAREA"
+      },
+      {
+        key: "ALIPAY_ROOT_CERT",
+        label: "支付宝根证书",
+        description: "证书模式下使用；支持直接粘贴 CRT 内容，或填写服务器可访问的证书文件路径。",
         secret: false,
         inputType: "TEXTAREA"
       },

@@ -2,6 +2,7 @@ import { Body, Controller, Delete, Get, Param, Post, Put } from "@nestjs/common"
 import { ApiOperation, ApiParam, ApiTags } from "@nestjs/swagger";
 import { AdminService } from "./admin.service";
 import { UpsertPlatformConfigDto } from "./dto/upsert-platform-config.dto";
+import { ValidatePlatformConfigDto } from "./dto/validate-platform-config.dto";
 
 @ApiTags("admin")
 @Controller("v1/admin")
@@ -30,9 +31,16 @@ export class AdminController {
   }
 
   @Put("platform-configs")
-  @ApiOperation({ summary: "Save a platform config group into database" })
+  @ApiOperation({ summary: "Save a platform config group as draft into database" })
   upsertPlatformConfigs(@Body() body: UpsertPlatformConfigDto) {
     return this.adminService.upsertPlatformConfigs(body);
+  }
+
+  @Post("platform-configs/:configKey/activate")
+  @ApiOperation({ summary: "Activate a draft platform config group" })
+  @ApiParam({ name: "configKey" })
+  activatePlatformConfig(@Param("configKey") configKey: string) {
+    return this.adminService.activatePlatformConfig(configKey);
   }
 
   @Delete("platform-configs/:configKey")
@@ -40,6 +48,16 @@ export class AdminController {
   @ApiParam({ name: "configKey" })
   clearPlatformConfig(@Param("configKey") configKey: string) {
     return this.adminService.clearPlatformConfig(configKey);
+  }
+
+  @Post("platform-configs/:configKey/validate")
+  @ApiOperation({ summary: "Validate whether a payment platform config is effective" })
+  @ApiParam({ name: "configKey" })
+  validatePlatformConfig(
+    @Param("configKey") configKey: string,
+    @Body() body?: ValidatePlatformConfigDto
+  ) {
+    return this.adminService.validatePlatformConfig(configKey, body?.value);
   }
 
   @Get("notifications")

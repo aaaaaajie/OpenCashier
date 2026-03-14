@@ -38,3 +38,187 @@ body {
     linear-gradient(135deg, rgba(22, 119, 255, 0.06), rgba(82, 196, 26, 0.08));
 }
 
+.cashier-shell {
+  min-height: 100vh;
+  padding: 32px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.cashier-card {
+  width: min(920px, 100%);
+  border-radius: 28px;
+  border: 1px solid rgba(22, 119, 255, 0.08);
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.08);
+}
+
+.cashier-result-card .ant-result {
+  padding: 48px 16px;
+}
+
+.cashier-loading {
+  min-height: 320px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.cashier-hero {
+  padding: 8px 0 28px;
+  text-align: center;
+}
+
+.cashier-eyebrow {
+  color: #1677ff;
+  letter-spacing: 0.18em;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.cashier-title.ant-typography {
+  margin-top: 12px;
+  margin-bottom: 8px;
+}
+
+.cashier-amount {
+  display: block;
+  margin-top: 8px;
+  font-size: clamp(36px, 6vw, 52px);
+  line-height: 1;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.cashier-subject.ant-typography {
+  margin: 14px 0 8px;
+  font-size: 16px;
+  color: #475569;
+}
+
+.cashier-content {
+  display: grid;
+  grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
+  gap: 24px;
+  align-items: stretch;
+}
+
+.cashier-column {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.cashier-method {
+  appearance: none;
+  width: 100%;
+  border: 1px solid #dbe4f0;
+  border-radius: 20px;
+  background: #fff;
+  padding: 18px 20px;
+  font: inherit;
+  color: inherit;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  cursor: pointer;
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease,
+    transform 0.2s ease;
+}
+
+.cashier-method:hover {
+  border-color: rgba(22, 119, 255, 0.45);
+  box-shadow: 0 10px 24px rgba(22, 119, 255, 0.1);
+  transform: translateY(-1px);
+}
+
+.cashier-method:focus-visible {
+  outline: 2px solid rgba(22, 119, 255, 0.28);
+  outline-offset: 3px;
+}
+
+.cashier-method-active {
+  border-color: #1677ff;
+  background:
+    linear-gradient(135deg, rgba(22, 119, 255, 0.08), rgba(22, 119, 255, 0.02));
+  box-shadow: 0 12px 28px rgba(22, 119, 255, 0.12);
+}
+
+.cashier-method-main {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  text-align: left;
+}
+
+.cashier-method-icon {
+  font-size: 28px;
+  color: #1677ff;
+}
+
+.cashier-method-title,
+.cashier-method-desc {
+  display: block;
+}
+
+.cashier-method-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.cashier-method-desc {
+  margin-top: 4px;
+  font-size: 13px;
+  color: #64748b;
+}
+
+.cashier-method-check {
+  color: #1677ff;
+  font-size: 18px;
+}
+
+.cashier-panel {
+  min-height: 360px;
+  border-radius: 24px;
+  background:
+    radial-gradient(circle at top, rgba(22, 119, 255, 0.08), transparent 40%),
+    linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+}
+
+.cashier-panel .ant-card-body {
+  min-height: 360px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.cashier-panel-content {
+  width: 100%;
+  text-align: center;
+  align-items: center;
+}
+
+.cashier-footer {
+  margin-top: 24px;
+  text-align: center;
+}
+
+@media (max-width: 768px) {
+  .cashier-shell {
+    padding: 16px;
+  }
+
+  .cashier-card {
+    border-radius: 24px;
+  }
+
+  .cashier-content {
+    grid-template-columns: 1fr;
+  }
+}

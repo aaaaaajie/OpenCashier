@@ -25,6 +25,7 @@ import { PlatformConfigService } from "./platform-config.service";
   exports: [
     PaymentStoreService,
     PlatformConfigService,
+    ChannelProviderConfigService,
     PaymentChannelRegistryService,
     PaymentAttemptService,
     AlipayChannelAdapter

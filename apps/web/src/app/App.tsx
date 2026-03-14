@@ -1,4 +1,4 @@
-import { ConfigProvider, theme } from "antd";
+import { App as AntdApp, ConfigProvider, theme } from "antd";
 import {
   BrowserRouter,
   Navigate,
@@ -25,21 +25,22 @@ export function App() {
         }
       }}
     >
-      <BrowserRouter>
-        <Routes>
-          <Route path="/cashier/:cashierToken" element={<CashierPage />} />
-          <Route path="/" element={<AdminLayout />}>
-            <Route index element={<Navigate to="/dashboard" replace />} />
-            <Route path="dashboard" element={<DashboardPage />} />
-            <Route path="merchants" element={<MerchantAppsPage />} />
-            <Route path="orders" element={<OrdersPage />} />
-            <Route path="refunds" element={<RefundsPage />} />
-            <Route path="notifications" element={<NotificationsPage />} />
-            <Route path="settings" element={<SettingsPage />} />
-          </Route>
-        </Routes>
-      </BrowserRouter>
+      <AntdApp>
+        <BrowserRouter>
+          <Routes>
+            <Route path="/cashier/:cashierToken" element={<CashierPage />} />
+            <Route path="/" element={<AdminLayout />}>
+              <Route index element={<Navigate to="/dashboard" replace />} />
+              <Route path="dashboard" element={<DashboardPage />} />
+              <Route path="merchants" element={<MerchantAppsPage />} />
+              <Route path="orders" element={<OrdersPage />} />
+              <Route path="refunds" element={<RefundsPage />} />
+              <Route path="notifications" element={<NotificationsPage />} />
+              <Route path="settings" element={<SettingsPage />} />
+            </Route>
+          </Routes>
+        </BrowserRouter>
+      </AntdApp>
     </ConfigProvider>
   );
 }
-

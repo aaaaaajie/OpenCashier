@@ -1,6 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
-import { InfoCircleOutlined } from "@ant-design/icons";
 import {
+  CheckCircleFilled,
+  ExclamationCircleFilled,
+  InfoCircleOutlined,
+  SafetyCertificateOutlined,
+} from "@ant-design/icons";
+import {
+  App as AntdApp,
+  Alert,
   Button,
   Card,
   Col,
@@ -17,7 +24,6 @@ import {
   Tag,
   Tooltip,
   Typography,
-  message,
 } from "antd";
 
 type ProviderCatalogItem = {
@@ -28,7 +34,20 @@ type ProviderCatalogItem = {
   enabled: boolean;
 };
 
-type PlatformConfigInputType = "TEXT" | "TEXTAREA" | "PASSWORD";
+type AlipayAuthMode = "KEY" | "CERT";
+type AlipayProductCapability = "QR" | "PAGE" | "WAP";
+
+type PlatformConfigInputType =
+  | "TEXT"
+  | "TEXTAREA"
+  | "PASSWORD"
+  | "SELECT"
+  | "MULTI_SELECT";
+
+type PlatformConfigOption = {
+  label: string;
+  value: string;
+};
 
 type PlatformConfigItemDefinition = {
   key: string;
@@ -37,6 +56,8 @@ type PlatformConfigItemDefinition = {
   secret: boolean;
   inputType: PlatformConfigInputType;
   placeholder?: string;
+  options?: PlatformConfigOption[];
+  visibleInAlipayAuthModes?: AlipayAuthMode[];
 };
 
 type PlatformConfigGroupDefinition = {
@@ -46,12 +67,17 @@ type PlatformConfigGroupDefinition = {
   items: PlatformConfigItemDefinition[];
 };
 
-type PlatformConfigRecord = {
+type PlatformConfigStageRecord = {
   id: string;
-  key: string;
   value: Record<string, string | null>;
   createdAt: string;
   updatedAt: string;
+};
+
+type PlatformConfigRecord = {
+  key: string;
+  active?: PlatformConfigStageRecord;
+  draft?: PlatformConfigStageRecord;
 };
 
 type ProviderConfigItem = PlatformConfigItemDefinition & {
@@ -63,10 +89,16 @@ type ProviderConfigRow = {
   groupKey: string;
   displayName: string;
   configured: boolean;
+  hasActive: boolean;
+  hasDraft: boolean;
+  statusLabel: string;
+  statusColor: string;
   appIdValue?: string;
   notifyUrl?: string;
+  authModeValue?: AlipayAuthMode;
+  authModeLabel?: string;
   gatewayModeLabel?: string;
-  items: ProviderConfigItem[];
+  editableItems: ProviderConfigItem[];
 };
 
 type ApiEnvelope<T> = {
@@ -74,7 +106,19 @@ type ApiEnvelope<T> = {
   data: T;
 };
 
-type ProviderModalValues = Record<string, string> & {
+type ProviderConfigValidationStatus = "SUCCESS" | "FAILED" | "UNSUPPORTED";
+
+type ProviderConfigValidationResult = {
+  configKey: string;
+  providerCode?: string;
+  displayName?: string;
+  status: ProviderConfigValidationStatus;
+  message: string;
+  checkedAt: string;
+  details?: Record<string, unknown>;
+};
+
+type ProviderModalValues = Record<string, string | string[]> & {
   providerGroupKey?: string;
 };
 
@@ -101,13 +145,46 @@ const PROVIDER_GROUP_NOTIFY_PATH = {
 
 const ALIPAY_GATEWAY_OPTIONS = [
   {
-    label: "沙箱测试",
-    value: "https://openapi-sandbox.dl.alipaydev.com/gateway.do",
-  },
-  {
     label: "正式生产",
     value: "https://openapi.alipay.com/gateway.do",
   },
+  {
+    label: "沙箱测试",
+    value: "https://openapi-sandbox.dl.alipaydev.com/gateway.do",
+  },
+];
+
+const ALIPAY_AUTH_MODE_OPTIONS = [
+  {
+    label: "密钥模式",
+    value: "KEY",
+  },
+  {
+    label: "证书模式",
+    value: "CERT",
+  },
+] satisfies PlatformConfigOption[];
+
+const ALIPAY_PRODUCT_CAPABILITY_OPTIONS = [
+  {
+    label: "当面付二维码",
+    value: "QR",
+  },
+  {
+    label: "电脑网站支付",
+    value: "PAGE",
+  },
+  {
+    label: "手机网站支付",
+    value: "WAP",
+  },
+] satisfies PlatformConfigOption[];
+
+const DEFAULT_ALIPAY_AUTH_MODE: AlipayAuthMode = "KEY";
+const DEFAULT_ALIPAY_PRODUCT_CAPABILITIES: AlipayProductCapability[] = [
+  "QR",
+  "PAGE",
+  "WAP",
 ];
 
 const DEFAULT_ALIPAY_GATEWAY = ALIPAY_GATEWAY_OPTIONS[0]?.value ?? "";
@@ -117,8 +194,25 @@ const PROVIDER_CONFIG_GROUPS: PlatformConfigGroupDefinition[] = [
     key: "alipay",
     label: "支付宝配置",
     description:
-      "当前接入的是支付宝公钥模式，支持直接粘贴 PEM，也支持填写服务器本地文件路径。",
+      "支持密钥模式和证书模式；私钥、公钥、证书都支持直接粘贴内容或填写服务器本地文件路径。",
     items: [
+      {
+        key: "ALIPAY_AUTH_MODE",
+        label: "接入方式",
+        description: "选择密钥模式或证书模式。",
+        secret: false,
+        inputType: "SELECT",
+        options: ALIPAY_AUTH_MODE_OPTIONS,
+      },
+      {
+        key: "ALIPAY_PRODUCT_CAPABILITIES",
+        label: "已开通产品",
+        description:
+          "统一收银台会按这里的能力优先生成二维码、电脑网站支付或手机网站支付，并在失败时做同渠道回退。",
+        secret: false,
+        inputType: "MULTI_SELECT",
+        options: ALIPAY_PRODUCT_CAPABILITY_OPTIONS,
+      },
       {
         key: "ALIPAY_APP_ID",
         label: "应用 ID",
@@ -140,6 +234,34 @@ const PROVIDER_CONFIG_GROUPS: PlatformConfigGroupDefinition[] = [
         description: "用于验签支付宝返回结果；支持 PEM 内容或文件路径。",
         secret: false,
         inputType: "TEXTAREA",
+        visibleInAlipayAuthModes: ["KEY"],
+      },
+      {
+        key: "ALIPAY_APP_CERT",
+        label: "应用公钥证书",
+        description:
+          "证书模式下使用；支持直接粘贴 CRT 内容，或填写服务器可访问的证书文件路径。",
+        secret: false,
+        inputType: "TEXTAREA",
+        visibleInAlipayAuthModes: ["CERT"],
+      },
+      {
+        key: "ALIPAY_PUBLIC_CERT",
+        label: "支付宝公钥证书",
+        description:
+          "证书模式下使用；支持直接粘贴 CRT 内容，或填写服务器可访问的证书文件路径。",
+        secret: false,
+        inputType: "TEXTAREA",
+        visibleInAlipayAuthModes: ["CERT"],
+      },
+      {
+        key: "ALIPAY_ROOT_CERT",
+        label: "支付宝根证书",
+        description:
+          "证书模式下使用；支持直接粘贴 CRT 内容，或填写服务器可访问的证书文件路径。",
+        secret: false,
+        inputType: "TEXTAREA",
+        visibleInAlipayAuthModes: ["CERT"],
       },
       {
         key: "ALIPAY_GATEWAY",
@@ -232,15 +354,20 @@ export function SettingsPage() {
   const [configRecords, setConfigRecords] = useState<PlatformConfigRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [deletingGroupKey, setDeletingGroupKey] = useState<string>();
+  const [activatingGroupKey, setActivatingGroupKey] = useState<string>();
   const [modalOpen, setModalOpen] = useState(false);
   const [modalSaving, setModalSaving] = useState(false);
+  const [modalValidating, setModalValidating] = useState(false);
+  const [modalValidationResult, setModalValidationResult] =
+    useState<ProviderConfigValidationResult>();
   const [editingGroupKey, setEditingGroupKey] = useState<string>();
-  const [messageApi, contextHolder] = message.useMessage();
+  const { message: messageApi, modal } = AntdApp.useApp();
   const [modalForm] = Form.useForm<ProviderModalValues>();
 
   const apiBaseUrl =
     import.meta.env.VITE_API_BASE_URL ?? "http://localhost:3000/api/v1";
   const selectedProviderGroupKey = Form.useWatch("providerGroupKey", modalForm);
+  const selectedAlipayAuthMode = Form.useWatch("ALIPAY_AUTH_MODE", modalForm);
   const activeProviderGroupKey = selectedProviderGroupKey ?? editingGroupKey;
 
   const platformBaseUrl = useMemo(
@@ -259,25 +386,28 @@ export function SettingsPage() {
             ],
         );
         const record = configRecords.find((item) => item.key === group.key);
-        const items = group.items.map((item) => {
-          const configured = hasConfigValue(record?.value, item.key);
-          const rawValue = record?.value[item.key];
-
-          return {
-            ...item,
-            configured,
-            value: typeof rawValue === "string" ? rawValue : undefined,
-          };
-        });
+        const effectiveValue = record?.active?.value ?? record?.draft?.value;
+        const editableValue = record?.draft?.value ?? record?.active?.value;
+        const authMode = resolveGroupAuthMode(group.key, effectiveValue);
+        const editableItems = buildProviderConfigItems(group, editableValue);
+        const { label: statusLabel, color: statusColor } = resolveConfigRowStatus(
+          record,
+        );
 
         return {
           groupKey: group.key,
           displayName: provider?.displayName ?? group.label,
-          configured: Boolean(record),
-          appIdValue: resolveGroupAppId(group.key, record?.value),
+          configured: Boolean(record?.active || record?.draft),
+          hasActive: Boolean(record?.active),
+          hasDraft: Boolean(record?.draft),
+          statusLabel,
+          statusColor,
+          appIdValue: resolveGroupAppId(group.key, effectiveValue),
           notifyUrl: resolveGroupNotifyUrl(group.key, platformBaseUrl),
-          gatewayModeLabel: resolveGroupGatewayMode(group.key, record?.value),
-          items,
+          authModeValue: authMode,
+          authModeLabel: resolveGroupAuthModeLabel(group.key, effectiveValue),
+          gatewayModeLabel: resolveGroupGatewayMode(group.key, effectiveValue),
+          editableItems,
         };
       }),
     [configRecords, platformBaseUrl, providers],
@@ -293,6 +423,19 @@ export function SettingsPage() {
       PROVIDER_CONFIG_GROUPS.find((group) => group.key === activeProviderGroupKey),
     [activeProviderGroupKey],
   );
+
+  const activeAlipayAuthMode = useMemo(() => {
+    if (activeProviderGroupKey !== "alipay") {
+      return undefined;
+    }
+
+    const persistedMode = providerRows.find((row) => row.groupKey === "alipay")
+      ?.authModeValue;
+
+    return normalizeAlipayAuthMode(
+      toSingleFieldValue(selectedAlipayAuthMode) ?? persistedMode,
+    );
+  }, [activeProviderGroupKey, providerRows, selectedAlipayAuthMode]);
 
   useEffect(() => {
     void loadSettings();
@@ -336,10 +479,15 @@ export function SettingsPage() {
   function openCreateModal(defaultGroupKey?: string) {
     modalForm.resetFields();
     setEditingGroupKey(undefined);
+    setModalValidationResult(undefined);
     modalForm.setFieldsValue({
       providerGroupKey: defaultGroupKey,
       ...(defaultGroupKey === "alipay"
-        ? { ALIPAY_GATEWAY: DEFAULT_ALIPAY_GATEWAY }
+        ? {
+            ALIPAY_AUTH_MODE: DEFAULT_ALIPAY_AUTH_MODE,
+            ALIPAY_PRODUCT_CAPABILITIES: DEFAULT_ALIPAY_PRODUCT_CAPABILITIES,
+            ALIPAY_GATEWAY: DEFAULT_ALIPAY_GATEWAY,
+          }
         : {}),
     });
     setModalOpen(true);
@@ -348,16 +496,29 @@ export function SettingsPage() {
   function openEditModal(row: ProviderConfigRow) {
     setEditingGroupKey(row.groupKey);
     modalForm.resetFields();
+    setModalValidationResult(undefined);
     modalForm.setFieldsValue({
       providerGroupKey: row.groupKey,
-      ...(row.groupKey === "alipay" &&
-      !row.items.find((item) => item.key === "ALIPAY_GATEWAY")?.value
-        ? { ALIPAY_GATEWAY: DEFAULT_ALIPAY_GATEWAY }
+      ...(row.groupKey === "alipay"
+        ? {
+            ALIPAY_AUTH_MODE:
+              row.authModeValue ?? DEFAULT_ALIPAY_AUTH_MODE,
+            ALIPAY_PRODUCT_CAPABILITIES:
+              parseMultiSelectValue(
+                row.editableItems.find(
+                  (item) => item.key === "ALIPAY_PRODUCT_CAPABILITIES",
+                )?.value,
+              ) ?? DEFAULT_ALIPAY_PRODUCT_CAPABILITIES,
+            ALIPAY_GATEWAY:
+              row.editableItems.find((item) => item.key === "ALIPAY_GATEWAY")
+                ?.value ??
+              DEFAULT_ALIPAY_GATEWAY,
+          }
         : {}),
       ...Object.fromEntries(
-        row.items
+        row.editableItems
           .filter((item) => !item.secret && item.value !== undefined)
-          .map((item) => [item.key, item.value ?? ""]),
+          .map((item) => [item.key, toFormFieldValue(item)]),
       ),
     });
     setModalOpen(true);
@@ -366,12 +527,34 @@ export function SettingsPage() {
   function closeModal() {
     setModalOpen(false);
     setEditingGroupKey(undefined);
+    setModalValidationResult(undefined);
     modalForm.resetFields();
   }
 
   function handleProviderChange(groupKey: string) {
-    if (groupKey === "alipay" && !modalForm.getFieldValue("ALIPAY_GATEWAY")) {
-      modalForm.setFieldValue("ALIPAY_GATEWAY", DEFAULT_ALIPAY_GATEWAY);
+    setModalValidationResult(undefined);
+
+    if (groupKey === "alipay") {
+      if (!modalForm.getFieldValue("ALIPAY_AUTH_MODE")) {
+        modalForm.setFieldValue("ALIPAY_AUTH_MODE", DEFAULT_ALIPAY_AUTH_MODE);
+      }
+
+      if (!modalForm.getFieldValue("ALIPAY_PRODUCT_CAPABILITIES")) {
+        modalForm.setFieldValue(
+          "ALIPAY_PRODUCT_CAPABILITIES",
+          DEFAULT_ALIPAY_PRODUCT_CAPABILITIES,
+        );
+      }
+
+      if (!modalForm.getFieldValue("ALIPAY_GATEWAY")) {
+        modalForm.setFieldValue("ALIPAY_GATEWAY", DEFAULT_ALIPAY_GATEWAY);
+      }
+    }
+  }
+
+  function handleModalValuesChange() {
+    if (modalValidationResult) {
+      setModalValidationResult(undefined);
     }
   }
 
@@ -379,6 +562,12 @@ export function SettingsPage() {
     try {
       const values = await modalForm.validateFields();
       const groupKey = values.providerGroupKey;
+
+      if (!groupKey) {
+        messageApi.error("请选择支付平台");
+        return;
+      }
+
       const targetGroup = PROVIDER_CONFIG_GROUPS.find(
         (group) => group.key === groupKey,
       );
@@ -388,42 +577,25 @@ export function SettingsPage() {
         return;
       }
 
+      if (
+        !modalValidationResult ||
+        modalValidationResult.configKey !== groupKey ||
+        !["SUCCESS", "UNSUPPORTED"].includes(modalValidationResult.status)
+      ) {
+        messageApi.error("请先在弹窗中完成验证，再保存草稿");
+        return;
+      }
+
       const targetRow = providerRows.find((row) => row.groupKey === groupKey);
-      const nextValue: Record<string, string | null> = {};
-      let hasMutation = false;
-
-      targetRow?.items.forEach((item) => {
-        const rawValue = values[item.key];
-        const value = typeof rawValue === "string" ? rawValue.trim() : "";
-
-        if (item.secret) {
-          if (value) {
-            nextValue[item.key] = value;
-            hasMutation = true;
-          }
-
-          return;
-        }
-
-        if (value) {
-          nextValue[item.key] = value;
-
-          if (!item.configured || value !== item.value) {
-            hasMutation = true;
-          }
-
-          return;
-        }
-
-        if (item.configured) {
-          nextValue[item.key] = null;
-          hasMutation = true;
-        }
-      });
+      const { patchValue, hasMutation } = buildConfigPatch(
+        targetGroup,
+        values,
+        targetRow?.editableItems,
+      );
 
       if (!hasMutation) {
         messageApi.error(
-          editingGroupKey ? "没有检测到可保存的变更" : "请至少填写一个配置项",
+          editingGroupKey ? "没有检测到可保存的草稿变更" : "请至少填写一个配置项",
         );
         return;
       }
@@ -437,7 +609,7 @@ export function SettingsPage() {
         },
         body: JSON.stringify({
           key: groupKey,
-          value: nextValue,
+          value: patchValue,
         }),
       });
       const json = (await response.json()) as ApiEnvelope<
@@ -448,7 +620,9 @@ export function SettingsPage() {
         throw new Error(json.message || "保存平台配置失败");
       }
 
-      messageApi.success(editingGroupKey ? "平台配置已更新" : "平台配置已新增");
+      messageApi.success(
+        `${targetGroup.label}草稿已保存，请回到表格点击“生效”后再应用到真实支付流程`,
+      );
       closeModal();
       await loadSettings();
     } catch (error) {
@@ -459,6 +633,75 @@ export function SettingsPage() {
       messageApi.error(getErrorMessage(error, "保存平台配置失败"));
     } finally {
       setModalSaving(false);
+    }
+  }
+
+  async function handleValidateModal() {
+    try {
+      const values = await modalForm.validateFields();
+      const groupKey = values.providerGroupKey;
+
+      if (!groupKey) {
+        messageApi.error("请选择支付平台");
+        return;
+      }
+
+      const targetGroup = PROVIDER_CONFIG_GROUPS.find(
+        (group) => group.key === groupKey,
+      );
+
+      if (!targetGroup) {
+        messageApi.error("请选择支付平台");
+        return;
+      }
+
+      const targetRow = providerRows.find((row) => row.groupKey === groupKey);
+      const { patchValue } = buildConfigPatch(
+        targetGroup,
+        values,
+        targetRow?.editableItems,
+      );
+
+      setModalValidating(true);
+
+      const response = await fetch(
+        `${apiBaseUrl}/admin/platform-configs/${groupKey}/validate`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            value: patchValue,
+          }),
+        },
+      );
+      const json = (await response.json()) as ApiEnvelope<
+        ProviderConfigValidationResult
+      >;
+
+      if (!response.ok) {
+        throw new Error(json.message || `验证 ${targetGroup.label} 配置失败`);
+      }
+
+      setModalValidationResult(json.data);
+
+      if (json.data.status === "SUCCESS") {
+        messageApi.success(`${targetGroup.label}配置验证通过`);
+        return;
+      }
+
+      if (json.data.status === "UNSUPPORTED") {
+        messageApi.info(`${targetGroup.label}暂不支持在线验证，可以直接保存草稿`);
+      }
+    } catch (error) {
+      if (isFormValidationError(error)) {
+        return;
+      }
+
+      messageApi.error(getErrorMessage(error, "验证平台配置失败"));
+    } finally {
+      setModalValidating(false);
     }
   }
 
@@ -489,7 +732,66 @@ export function SettingsPage() {
     }
   }
 
+  function handleActivateGroup(row: ProviderConfigRow) {
+    modal.confirm({
+      title: `生效 ${row.displayName} 配置`,
+      icon: <ExclamationCircleFilled />,
+      content: `${row.displayName} 的草稿配置生效后，会立即影响当前正在使用的支付能力。请确认草稿已经验证通过，并且可以用于真实支付。`,
+      okText: "确认生效",
+      cancelText: "取消",
+      okButtonProps: {
+        loading: activatingGroupKey === row.groupKey,
+      },
+      onOk: async () => {
+        setActivatingGroupKey(row.groupKey);
+
+        try {
+          const response = await fetch(
+            `${apiBaseUrl}/admin/platform-configs/${row.groupKey}/activate`,
+            {
+              method: "POST",
+            },
+          );
+          const json = (await response.json()) as ApiEnvelope<
+            PlatformConfigRecord[] | null
+          >;
+
+          if (!response.ok) {
+            throw new Error(json.message || `生效 ${row.displayName} 配置失败`);
+          }
+
+          messageApi.success(`${row.displayName}配置已生效`);
+          await loadSettings();
+        } catch (error) {
+          messageApi.error(getErrorMessage(error, "平台配置生效失败"));
+          throw error;
+        } finally {
+          setActivatingGroupKey(undefined);
+        }
+      },
+    });
+  }
+
   function renderConfigInput(item: ProviderConfigItem) {
+    if (item.inputType === "MULTI_SELECT") {
+      return (
+        <Select
+          mode="multiple"
+          placeholder="请选择"
+          options={item.options}
+        />
+      );
+    }
+
+    if (item.inputType === "SELECT") {
+      return (
+        <Select
+          placeholder="请选择"
+          options={item.options}
+        />
+      );
+    }
+
     if (item.key === "ALIPAY_GATEWAY") {
       return (
         <Select
@@ -523,7 +825,6 @@ export function SettingsPage() {
 
   return (
     <>
-      {contextHolder}
       <Spin spinning={loading}>
         <Card
           title="支付平台配置"
@@ -552,6 +853,14 @@ export function SettingsPage() {
                 width: 180,
               },
               {
+                title: "状态",
+                key: "status",
+                width: 130,
+                render: (_: unknown, row: ProviderConfigRow) => (
+                  <Tag color={row.statusColor}>{row.statusLabel}</Tag>
+                ),
+              },
+              {
                 title: "AppId",
                 dataIndex: "appIdValue",
                 render: (value?: string) =>
@@ -562,6 +871,12 @@ export function SettingsPage() {
                   ) : (
                     "-"
                   ),
+              },
+              {
+                title: "接入方式",
+                dataIndex: "authModeLabel",
+                width: 140,
+                render: (value?: string) => value ?? "-",
               },
               {
                 title: "回调地址",
@@ -586,15 +901,33 @@ export function SettingsPage() {
               {
                 title: "操作",
                 key: "actions",
-                width: 180,
+                width: 240,
                 render: (_: unknown, row: ProviderConfigRow) => (
                   <Space size={4}>
+                    <Tooltip
+                      title={
+                        row.hasDraft
+                          ? "将当前草稿推送为线上生效配置"
+                          : "当前没有待生效草稿"
+                      }
+                    >
+                      <span>
+                        <Button
+                          type="link"
+                          disabled={!row.hasDraft}
+                          loading={activatingGroupKey === row.groupKey}
+                          onClick={() => handleActivateGroup(row)}
+                        >
+                          生效
+                        </Button>
+                      </span>
+                    </Tooltip>
                     <Button type="link" onClick={() => openEditModal(row)}>
                       编辑
                     </Button>
                     <Popconfirm
                       title="删除平台配置"
-                      description={`删除后会清空 ${row.displayName} 的整组配置。`}
+                      description={`删除后会同时清空 ${row.displayName} 的草稿和已生效配置。`}
                       okText="删除"
                       cancelText="取消"
                       onConfirm={() => void handleDeleteGroup(row)}
@@ -616,16 +949,50 @@ export function SettingsPage() {
       </Spin>
 
       <Modal
-        title={editingGroupKey ? "编辑支付平台配置" : "新增支付平台配置"}
+        title={editingGroupKey ? "编辑支付平台配置草稿" : "新增支付平台配置草稿"}
         open={modalOpen}
         destroyOnHidden
         onCancel={closeModal}
-        onOk={() => void handleSubmitModal()}
-        okText={editingGroupKey ? "保存" : "新增"}
-        confirmLoading={modalSaving}
         width={860}
+        footer={[
+          <Button key="cancel" onClick={closeModal}>
+            取消
+          </Button>,
+          <Button
+            key="validate"
+            icon={
+              modalValidationResult?.status === "SUCCESS" ? (
+                <CheckCircleFilled style={{ color: "#52c41a" }} />
+              ) : (
+                <SafetyCertificateOutlined />
+              )
+            }
+            loading={modalValidating}
+            onClick={() => void handleValidateModal()}
+          >
+            {modalValidationResult?.status === "SUCCESS"
+              ? "验证已通过"
+              : "验证配置"}
+          </Button>,
+          <Button
+            key="save"
+            type="primary"
+            loading={modalSaving}
+            disabled={
+              !modalValidationResult ||
+              !["SUCCESS", "UNSUPPORTED"].includes(modalValidationResult.status)
+            }
+            onClick={() => void handleSubmitModal()}
+          >
+            保存草稿
+          </Button>,
+        ]}
       >
-        <Form layout="vertical" form={modalForm}>
+        <Form
+          layout="vertical"
+          form={modalForm}
+          onValuesChange={handleModalValuesChange}
+        >
           <Form.Item
             name="providerGroupKey"
             label="支付平台"
@@ -658,64 +1025,100 @@ export function SettingsPage() {
 
           {activeProviderGroup ? (
             <Row gutter={[16, 0]}>
-              {activeProviderGroup.items.map((item) => {
-                const activeItem = providerRows
-                  .find((row) => row.groupKey === activeProviderGroup.key)
-                  ?.items.find((candidate) => candidate.key === item.key);
+              {activeProviderGroup.items
+                .filter((item) =>
+                  isConfigItemVisible(
+                    activeProviderGroup.key,
+                    item,
+                    activeAlipayAuthMode,
+                  ),
+                )
+                .map((item) => {
+                  const editableItems =
+                    providerRows.find((row) => row.groupKey === activeProviderGroup.key)
+                      ?.editableItems ?? buildProviderConfigItems(activeProviderGroup);
+                  const activeItem = editableItems.find(
+                    (candidate) => candidate.key === item.key,
+                  );
 
-                if (!activeItem) {
-                  return null;
-                }
+                  if (!activeItem) {
+                    return null;
+                  }
 
-                return (
-                  <Col
-                    xs={24}
-                    md={item.inputType === "TEXTAREA" ? 24 : 12}
-                    key={item.key}
-                  >
-                    <Form.Item
-                      name={item.key}
-                      label={
-                        <Space size={8}>
-                          <span>{item.label}</span>
-                          {item.secret ? <Tag color="volcano">私密</Tag> : null}
-                          <Tooltip
-                            placement="topLeft"
-                            title={
-                              <Space direction="vertical" size={2}>
-                                <span>{item.description}</span>
-                                <Typography.Text
-                                  style={{ color: "rgba(255,255,255,0.72)" }}
-                                >
-                                  {item.key}
-                                </Typography.Text>
-                                {item.secret && activeItem.configured ? (
-                                  <span>
-                                    已配置时不会回显，留空表示保持不变。
-                                  </span>
-                                ) : null}
-                                {!item.secret && activeItem.configured ? (
-                                  <span>清空后保存会删除该字段当前配置。</span>
-                                ) : null}
-                              </Space>
-                            }
-                          >
-                            <Typography.Text
-                              type="secondary"
-                              style={{ cursor: "help" }}
-                            >
-                              <InfoCircleOutlined />
-                            </Typography.Text>
-                          </Tooltip>
-                        </Space>
-                      }
+                  return (
+                    <Col
+                      xs={24}
+                      md={item.inputType === "TEXTAREA" ? 24 : 12}
+                      key={item.key}
                     >
-                      {renderConfigInput(activeItem)}
-                    </Form.Item>
-                  </Col>
-                );
+                      <Form.Item
+                        name={item.key}
+                        label={
+                          <Space size={8}>
+                            <span>{item.label}</span>
+                            {item.secret ? <Tag color="volcano">私密</Tag> : null}
+                            <Tooltip
+                              placement="topLeft"
+                              title={
+                                <Space direction="vertical" size={2}>
+                                  <span>{item.description}</span>
+                                  <Typography.Text
+                                    style={{ color: "rgba(255,255,255,0.72)" }}
+                                  >
+                                    {item.key}
+                                  </Typography.Text>
+                                  {item.secret && activeItem.configured ? (
+                                    <span>
+                                      已配置时不会回显，留空表示保持不变。
+                                    </span>
+                                  ) : null}
+                                  {!item.secret && activeItem.configured ? (
+                                    <span>清空后保存会删除该字段当前配置。</span>
+                                  ) : null}
+                                </Space>
+                              }
+                            >
+                              <Typography.Text
+                                type="secondary"
+                                style={{ cursor: "help" }}
+                              >
+                                <InfoCircleOutlined />
+                              </Typography.Text>
+                            </Tooltip>
+                          </Space>
+                        }
+                      >
+                        {renderConfigInput(activeItem)}
+                      </Form.Item>
+                    </Col>
+                  );
               })}
             </Row>
+          ) : null}
+
+          {modalValidationResult ? (
+            <Alert
+              showIcon
+              type={
+                modalValidationResult.status === "SUCCESS"
+                  ? "success"
+                  : modalValidationResult.status === "FAILED"
+                    ? "error"
+                    : "info"
+              }
+              message={
+                modalValidationResult.status === "SUCCESS"
+                  ? "验证通过"
+                  : modalValidationResult.status === "FAILED"
+                    ? "验证未通过"
+                    : "暂不支持在线验证"
+              }
+              description={`${modalValidationResult.message}（${new Date(
+                modalValidationResult.checkedAt,
+              ).toLocaleString("zh-CN", {
+                hour12: false,
+              })}）`}
+            />
           ) : null}
         </Form>
       </Modal>
@@ -725,6 +1128,154 @@ export function SettingsPage() {
 
 function getErrorMessage(error: unknown, fallbackMessage: string): string {
   return error instanceof Error ? error.message : fallbackMessage;
+}
+
+function buildProviderConfigItems(
+  group: PlatformConfigGroupDefinition,
+  value?: Record<string, string | null>,
+): ProviderConfigItem[] {
+  return group.items.map((item) => {
+    const configured = hasConfigValue(value, item.key);
+    const rawValue = value?.[item.key];
+
+    return {
+      ...item,
+      configured,
+      value: typeof rawValue === "string" ? rawValue : undefined,
+    };
+  });
+}
+
+function buildConfigPatch(
+  group: PlatformConfigGroupDefinition,
+  values: ProviderModalValues,
+  currentItems?: ProviderConfigItem[],
+): {
+  patchValue: Record<string, string | null>;
+  hasMutation: boolean;
+} {
+  const currentItemMap = new Map(
+    (currentItems ?? buildProviderConfigItems(group)).map((item) => [item.key, item]),
+  );
+  const patchValue: Record<string, string | null> = {};
+  let hasMutation = false;
+  const alipayAuthMode = normalizeAlipayAuthMode(
+    group.key === "alipay" ? toSingleFieldValue(values.ALIPAY_AUTH_MODE) : undefined,
+  );
+
+  group.items.forEach((item) => {
+    const currentItem =
+      currentItemMap.get(item.key) ??
+      ({
+        ...item,
+        configured: false,
+      } satisfies ProviderConfigItem);
+    const visible = isConfigItemVisible(group.key, item, alipayAuthMode);
+
+    if (!visible) {
+      if (currentItem.configured) {
+        patchValue[item.key] = null;
+        hasMutation = true;
+      }
+
+      return;
+    }
+
+    const value = normalizeFormFieldValue(values[item.key], item.inputType);
+
+    if (item.secret) {
+      if (value) {
+        patchValue[item.key] = value;
+        hasMutation = true;
+      }
+
+      return;
+    }
+
+    if (value) {
+      patchValue[item.key] = value;
+
+      if (!currentItem.configured || value !== currentItem.value) {
+        hasMutation = true;
+      }
+
+      return;
+    }
+
+    if (currentItem.configured) {
+      patchValue[item.key] = null;
+      hasMutation = true;
+    }
+  });
+
+  return {
+    patchValue,
+    hasMutation,
+  };
+}
+
+function resolveConfigRowStatus(record?: PlatformConfigRecord): {
+  label: string;
+  color: string;
+} {
+  if (record?.draft && record?.active) {
+    return {
+      label: "待生效草稿",
+      color: "orange",
+    };
+  }
+
+  if (record?.draft) {
+    return {
+      label: "仅草稿",
+      color: "blue",
+    };
+  }
+
+  return {
+    label: "已生效",
+    color: "green",
+  };
+}
+
+function normalizeFormFieldValue(
+  rawValue: string | string[] | undefined,
+  inputType: PlatformConfigInputType,
+): string {
+  if (inputType === "MULTI_SELECT") {
+    return Array.isArray(rawValue)
+      ? rawValue.map((item) => item.trim()).filter(Boolean).join(",")
+      : "";
+  }
+
+  return typeof rawValue === "string" ? rawValue.trim() : "";
+}
+
+function toSingleFieldValue(
+  rawValue: string | string[] | undefined,
+): string | undefined {
+  return typeof rawValue === "string" ? rawValue : undefined;
+}
+
+function parseMultiSelectValue(value?: string): string[] | undefined {
+  if (!value?.trim()) {
+    return undefined;
+  }
+
+  const result = value
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+
+  return result.length > 0 ? result : undefined;
+}
+
+function toFormFieldValue(item: ProviderConfigItem): string | string[] | undefined {
+  if (item.inputType === "MULTI_SELECT") {
+    return parseMultiSelectValue(item.value);
+  }
+
+  return item.value;
 }
 
 function isFormValidationError(error: unknown): boolean {
@@ -743,13 +1294,33 @@ function hasConfigValue(
   return Boolean(value) && Object.prototype.hasOwnProperty.call(value, key);
 }
 
+function normalizeAlipayAuthMode(
+  value?: string | null,
+): AlipayAuthMode {
+  return value?.trim().toUpperCase() === "CERT" ? "CERT" : "KEY";
+}
+
+function isConfigItemVisible(
+  groupKey: string,
+  item: Pick<PlatformConfigItemDefinition, "visibleInAlipayAuthModes">,
+  alipayAuthMode?: AlipayAuthMode,
+): boolean {
+  if (groupKey !== "alipay" || !item.visibleInAlipayAuthModes?.length) {
+    return true;
+  }
+
+  return item.visibleInAlipayAuthModes.includes(
+    alipayAuthMode ?? DEFAULT_ALIPAY_AUTH_MODE,
+  );
+}
+
 function resolvePlatformBaseUrl(
   records: PlatformConfigRecord[],
   apiBaseUrl: string,
 ): string | undefined {
   const configuredBaseUrl = records
     .find((record) => record.key === "platform")
-    ?.value.APP_BASE_URL?.trim();
+    ?.active?.value.APP_BASE_URL?.trim();
 
   if (configuredBaseUrl) {
     return configuredBaseUrl.replace(/\/$/, "");
@@ -792,6 +1363,45 @@ function resolveGroupNotifyUrl(
   }
 
   return `${platformBaseUrl}${notifyPath}`;
+}
+
+function resolveGroupAuthMode(
+  groupKey: string,
+  value?: Record<string, string | null>,
+): AlipayAuthMode | undefined {
+  if (groupKey !== "alipay") {
+    return undefined;
+  }
+
+  if (value?.ALIPAY_AUTH_MODE?.trim()) {
+    return normalizeAlipayAuthMode(value.ALIPAY_AUTH_MODE);
+  }
+
+  if (
+    value?.ALIPAY_APP_CERT ||
+    value?.ALIPAY_PUBLIC_CERT ||
+    value?.ALIPAY_ROOT_CERT
+  ) {
+    return "CERT";
+  }
+
+  return "KEY";
+}
+
+function resolveGroupAuthModeLabel(
+  groupKey: string,
+  value?: Record<string, string | null>,
+): string | undefined {
+  const authMode = resolveGroupAuthMode(groupKey, value);
+
+  if (!authMode) {
+    return undefined;
+  }
+
+  return (
+    ALIPAY_AUTH_MODE_OPTIONS.find((option) => option.value === authMode)?.label ??
+    authMode
+  );
 }
 
 function resolveGroupGatewayMode(

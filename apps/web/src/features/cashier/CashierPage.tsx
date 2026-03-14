@@ -1,334 +1,555 @@
+import { AlipayCircleFilled, CheckCircleFilled } from "@ant-design/icons";
 import {
   Alert,
   Button,
   Card,
-  Col,
-  Descriptions,
   QRCode,
-  Row,
   Result,
   Space,
-  Steps,
-  Tag,
+  Spin,
   Typography
 } from "antd";
 import { useEffect, useMemo, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { useParams } from "react-router-dom";
+
+interface CashierOrder {
+  platformOrderNo: string;
+  amount: number;
+  currency: string;
+  expireTime: string;
+  status: string;
+  subject?: string;
+  description?: string;
+  returnUrl?: string;
+}
+
+interface CashierChannel {
+  providerCode: string;
+  channel: string;
+  displayName: string;
+  integrationMode: string;
+  enabled: boolean;
+  sessionStatus: "PENDING" | "READY" | "FAILED";
+  actionType: "NONE" | "QR_CODE" | "REDIRECT_URL";
+  attemptNo?: string;
+  qrContent?: string;
+  payUrl?: string;
+  sdkPackage?: string;
+  note: string;
+  providerPayload?: Record<string, unknown>;
+}
+
+interface CashierTokenPayload {
+  platformOrderNo?: string;
+  expireTime?: string;
+}
+
+type CashierTerminal = "desktop" | "mobile";
+
+function formatAmount(amount: number, currency: string) {
+  if (currency === "CNY") {
+    return `¥${(amount / 100).toFixed(2)}`;
+  }
+
+  return `${(amount / 100).toFixed(2)} ${currency}`;
+}
+
+function formatExpireTime(expireTime: string) {
+  const value = new Date(expireTime);
+
+  if (Number.isNaN(value.getTime())) {
+    return expireTime;
+  }
+
+  return `请在 ${value.toLocaleString("zh-CN", { hour12: false })} 前完成支付`;
+}
+
+function isTerminalStatus(status: string) {
+  return status === "SUCCESS" || status === "CLOSED" || status === "EXPIRED";
+}
+
+function resolveChannelFailureMessage(channel?: CashierChannel): string {
+  const note = channel?.note?.trim();
+
+  if (!note) {
+    return "当前支付宝支付会话创建失败，请返回外部系统重新发起订单。";
+  }
+
+  if (note.includes("ACCESS_FORBIDDEN")) {
+    return "当前支付宝应用没有生成扫码二维码的权限，无法调用 alipay.trade.precreate。请在支付宝开放平台确认已开通当面付/扫码支付，并检查当前生效的 AppId 与证书是否匹配。";
+  }
+
+  return `当前支付宝支付会话创建失败：${note}`;
+}
+
+function detectCashierTerminal(): CashierTerminal {
+  if (typeof window === "undefined") {
+    return "desktop";
+  }
+
+  const userAgent = window.navigator.userAgent.toLowerCase();
+
+  if (
+    /iphone|ipad|ipod|android|mobile|micromessenger/.test(userAgent) ||
+    window.innerWidth <= 768
+  ) {
+    return "mobile";
+  }
+
+  return "desktop";
+}
+
+function getAlipayChannelPriority(
+  channel: CashierChannel,
+  terminal: CashierTerminal
+): number {
+  const statusWeight =
+    channel.sessionStatus === "READY"
+      ? 100
+      : channel.sessionStatus === "PENDING"
+        ? 50
+        : 0;
+
+  const channelWeight =
+    terminal === "mobile"
+      ? channel.channel === "alipay_wap"
+        ? 30
+        : channel.channel === "alipay_page"
+          ? 20
+          : 10
+      : channel.channel === "alipay_qr"
+        ? 30
+        : channel.channel === "alipay_page"
+          ? 20
+          : 10;
+
+  return statusWeight + channelWeight;
+}
+
+function selectPreferredAlipayChannel(
+  channels: CashierChannel[],
+  terminal: CashierTerminal
+): CashierChannel | undefined {
+  return [...channels].sort(
+    (left, right) =>
+      getAlipayChannelPriority(right, terminal) -
+      getAlipayChannelPriority(left, terminal)
+  )[0];
+}
+
+function parseCashierTokenPayload(
+  cashierToken?: string
+): CashierTokenPayload | null {
+  if (!cashierToken) {
+    return null;
+  }
+
+  const [encodedPayload] = cashierToken.split(".");
+
+  if (!encodedPayload) {
+    return null;
+  }
+
+  try {
+    const normalized = encodedPayload.replace(/-/g, "+").replace(/_/g, "/");
+    const padded = normalized.padEnd(
+      normalized.length + ((4 - (normalized.length % 4)) % 4),
+      "="
+    );
+    const payload = JSON.parse(atob(padded)) as CashierTokenPayload;
+
+    if (!payload.platformOrderNo || !payload.expireTime) {
+      return null;
+    }
+
+    return payload;
+  } catch {
+    return null;
+  }
+}
 
 export function CashierPage() {
   const { cashierToken } = useParams();
-  const fallbackOrderInfo = useMemo(
-    () => ({
-      platformOrderNo: cashierToken ?? "P202603120001",
-      amount: 9900,
-      currency: "CNY",
-      expireTime: "15 分钟后过期",
-      status: "WAIT_PAY",
-      channels: ["wechat_qr", "alipay_qr"]
-    }),
+  const terminal = useMemo(() => detectCashierTerminal(), []);
+  const tokenPayload = useMemo(
+    () => parseCashierTokenPayload(cashierToken),
     [cashierToken]
   );
-  const [reloadKey, setReloadKey] = useState(0);
+  const fallbackOrder = useMemo<CashierOrder>(
+    () => ({
+      platformOrderNo: tokenPayload?.platformOrderNo ?? cashierToken ?? "",
+      amount: 0,
+      currency: "CNY",
+      expireTime:
+        tokenPayload?.expireTime ??
+        new Date(Date.now() + 15 * 60 * 1000).toISOString(),
+      status: "WAIT_PAY",
+      subject: "支付订单"
+    }),
+    [cashierToken, tokenPayload]
+  );
   const [cashierState, setCashierState] = useState<{
-    order: {
-      platformOrderNo: string;
-      amount: number;
-      currency: string;
-      expireTime: string;
-      status: string;
-    };
-    channels: Array<{
-      channel: string;
-      displayName: string;
-      integrationMode: string;
-      enabled: boolean;
-      sessionStatus: "PENDING" | "READY" | "FAILED";
-      actionType: "NONE" | "QR_CODE" | "REDIRECT_URL";
-      attemptNo?: string;
-      qrContent?: string;
-      payUrl?: string;
-      sdkPackage?: string;
-      note: string;
-    }>;
+    order: CashierOrder;
+    channels: CashierChannel[];
   } | null>(null);
+  const [selectedMethod, setSelectedMethod] = useState("alipay");
+  const [reloadKey, setReloadKey] = useState(0);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const tokenExpireAt = tokenPayload?.expireTime
+    ? new Date(tokenPayload.expireTime).getTime()
+    : Number.NaN;
+  const tokenExpired =
+    Number.isFinite(tokenExpireAt) && tokenExpireAt <= Date.now();
+
+  useEffect(() => {
+    setCashierState(null);
+    setSelectedMethod("alipay");
+    setLoading(true);
+    setError(null);
+  }, [cashierToken]);
 
   useEffect(() => {
     if (!cashierToken) {
+      setLoading(false);
+      setError("INVALID_CASHIER_TOKEN");
       return;
     }
 
+    if (!tokenPayload) {
+      setLoading(false);
+      setError("INVALID_CASHIER_TOKEN");
+      return;
+    }
+
+    if (tokenExpired) {
+      setLoading(false);
+      setError("EXPIRED_CASHIER_TOKEN");
+      return;
+    }
+
+    let cancelled = false;
     const apiBaseUrl =
       import.meta.env.VITE_API_BASE_URL ?? "http://localhost:3000/api/v1";
 
     async function loadCashierSession() {
+      if (!cashierState) {
+        setLoading(true);
+      }
+
       try {
-        const response = await fetch(`${apiBaseUrl}/cashier/${cashierToken}`);
+        const response = await fetch(
+          `${apiBaseUrl}/cashier/${cashierToken}?terminal=${terminal}`
+        );
 
         if (!response.ok) {
+          if (response.status === 404) {
+            throw new Error("CASHIER_NOT_FOUND");
+          }
+
           throw new Error(`cashier request failed: ${response.status}`);
         }
 
         const json = (await response.json()) as {
           data: {
-            order: {
-              platformOrderNo: string;
-              amount: number;
-              currency: string;
-              expireTime: string;
-              status: string;
-            };
-            channels: Array<{
-              channel: string;
-              displayName: string;
-              integrationMode: string;
-              enabled: boolean;
-              sessionStatus: "PENDING" | "READY" | "FAILED";
-              actionType: "NONE" | "QR_CODE" | "REDIRECT_URL";
-              attemptNo?: string;
-              qrContent?: string;
-              payUrl?: string;
-              sdkPackage?: string;
-              note: string;
-            }>;
+            order: CashierOrder;
+            channels: CashierChannel[];
           };
         };
+
+        if (cancelled) {
+          return;
+        }
 
         setCashierState(json.data);
         setError(null);
       } catch (caught) {
+        if (cancelled) {
+          return;
+        }
+
         setError(
           caught instanceof Error ? caught.message : "Failed to load cashier data"
         );
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
       }
     }
 
     void loadCashierSession();
-  }, [cashierToken, reloadKey]);
 
-  const orderInfo = cashierState?.order ?? fallbackOrderInfo;
-  const channels =
-    cashierState?.channels ??
-    fallbackOrderInfo.channels.map((item) => ({
-      channel: item,
-      displayName: item,
-      integrationMode: "PENDING",
-      enabled: false,
-      sessionStatus: "PENDING" as const,
-      actionType: "NONE" as const,
-      note: "当前为本地占位数据，真实渠道会话尚未返回。"
-    }));
-  const primaryChannel =
-    channels.find(
-      (item) =>
-        item.enabled &&
-        item.sessionStatus === "READY" &&
-        item.actionType === "QR_CODE" &&
-        item.qrContent
-    ) ??
-    channels.find(
-      (item) =>
-        item.enabled &&
-        item.sessionStatus === "READY" &&
-        item.actionType === "REDIRECT_URL" &&
-        item.payUrl
-    ) ??
-    channels[0];
+    return () => {
+      cancelled = true;
+    };
+  }, [cashierToken, reloadKey, terminal, tokenExpired, tokenPayload]);
+
+  const orderInfo = cashierState?.order ?? fallbackOrder;
+  const returnUrl = orderInfo.returnUrl?.trim();
+  const alipayChannel = selectPreferredAlipayChannel(
+    cashierState?.channels.filter(
+      (item) => item.providerCode === "ALIPAY" || item.channel.startsWith("alipay")
+    ) ?? [],
+    terminal
+  );
+  const shouldPoll =
+    Boolean(cashierToken) &&
+    !isTerminalStatus(orderInfo.status) &&
+    alipayChannel?.sessionStatus !== "FAILED";
+
+  useEffect(() => {
+    if (!shouldPoll) {
+      return;
+    }
+
+    const timer = window.setInterval(() => {
+      setReloadKey((value) => value + 1);
+    }, 3000);
+
+    return () => {
+      window.clearInterval(timer);
+    };
+  }, [shouldPoll]);
+
+  useEffect(() => {
+    if (orderInfo.status !== "SUCCESS" || !returnUrl) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      window.location.replace(returnUrl);
+    }, 1500);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [orderInfo.status, returnUrl]);
+
+  if (!cashierToken) {
+    return (
+      <div className="cashier-shell">
+        <Card className="cashier-card">
+          <Result status="error" title="收银台地址无效" />
+        </Card>
+      </div>
+    );
+  }
+
+  if (loading && !cashierState) {
+    return (
+      <div className="cashier-shell">
+        <Card className="cashier-card">
+          <div className="cashier-loading">
+            <Spin size="large" />
+            <Typography.Text type="secondary">正在加载支付信息</Typography.Text>
+          </div>
+        </Card>
+      </div>
+    );
+  }
+
+  if (error && !cashierState) {
+    const isExpiredError = error === "EXPIRED_CASHIER_TOKEN";
+    const isInvalidTokenError =
+      error === "INVALID_CASHIER_TOKEN" || error === "CASHIER_NOT_FOUND";
+
+    return (
+      <div className="cashier-shell">
+        <Card className="cashier-card">
+          <Result
+            status={isInvalidTokenError ? "error" : "warning"}
+            title={
+              isExpiredError
+                ? "收银台链接已过期"
+                : isInvalidTokenError
+                  ? "收银台地址无效"
+                  : "收银台暂时不可用"
+            }
+            subTitle={
+              isExpiredError
+                ? "当前订单支付时效已结束，请返回外部系统重新发起支付。"
+                : isInvalidTokenError
+                  ? "当前链接无法识别，请重新获取外部系统返回的收银台地址。"
+                  : error
+            }
+            extra={
+              !isExpiredError && !isInvalidTokenError ? (
+                <Button type="primary" onClick={() => setReloadKey((value) => value + 1)}>
+                  重新加载
+                </Button>
+              ) : returnUrl ? (
+                <Button type="primary" onClick={() => window.location.replace(returnUrl)}>
+                  返回外部系统
+                </Button>
+              ) : null
+            }
+          />
+        </Card>
+      </div>
+    );
+  }
+
+  if (orderInfo.status === "SUCCESS") {
+    return (
+      <div className="cashier-shell">
+        <Card className="cashier-card cashier-result-card">
+          <Result
+            status="success"
+            title="支付成功"
+            subTitle={
+              returnUrl
+                ? "支付已完成，正在返回外部系统。"
+                : "支付已完成，当前页面可以关闭。"
+            }
+            extra={
+              returnUrl ? (
+                <Button type="primary" onClick={() => window.location.replace(returnUrl)}>
+                  返回外部系统
+                </Button>
+              ) : null
+            }
+          />
+        </Card>
+      </div>
+    );
+  }
+
+  if (orderInfo.status === "CLOSED" || orderInfo.status === "EXPIRED") {
+    return (
+      <div className="cashier-shell">
+        <Card className="cashier-card cashier-result-card">
+          <Result
+            status="warning"
+            title={orderInfo.status === "EXPIRED" ? "订单已过期" : "订单已关闭"}
+            subTitle="当前订单无法继续支付，请返回外部系统重新发起。"
+            extra={
+              returnUrl ? (
+                <Button type="primary" onClick={() => window.location.replace(returnUrl)}>
+                  返回外部系统
+                </Button>
+              ) : null
+            }
+          />
+        </Card>
+      </div>
+    );
+  }
+
+  const selectedChannel = selectedMethod === "alipay" ? alipayChannel : undefined;
 
   return (
-    <div
-      style={{
-        minHeight: "100vh",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        padding: 24
-      }}
-    >
-      <Card style={{ width: "min(1080px, 100%)" }}>
-        <Space
-          direction="vertical"
-          size={24}
-          style={{ width: "100%" }}
-        >
-          {error ? (
-            <Alert
-              type="warning"
-              showIcon
-              message="收银台接口尚未连通，当前展示回退占位数据"
-              description={error}
-            />
-          ) : null}
+    <div className="cashier-shell">
+      <Card className="cashier-card">
+        {error ? (
+          <Alert
+            type="warning"
+            showIcon
+            message="支付状态同步延迟"
+            description="当前先展示最近一次支付会话，页面会继续自动刷新。"
+            style={{ marginBottom: 24 }}
+          />
+        ) : null}
 
-          <div>
-            <Typography.Title level={2} style={{ marginTop: 0, marginBottom: 8 }}>
-              统一收银台
-            </Typography.Title>
-            <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
-              这是第一阶段收银台骨架页面，后续会接真实二维码、轮询状态和渠道拉起。
-            </Typography.Paragraph>
+        <div className="cashier-hero">
+          <Typography.Title level={2} className="cashier-title">
+            统一收银台
+          </Typography.Title>
+          <Typography.Text className="cashier-amount">
+            {formatAmount(orderInfo.amount, orderInfo.currency)}
+          </Typography.Text>
+          <Typography.Paragraph className="cashier-subject">
+            {orderInfo.subject ?? "支付订单"}
+          </Typography.Paragraph>
+          <Typography.Text type="secondary">
+            {formatExpireTime(orderInfo.expireTime)}
+          </Typography.Text>
+        </div>
+
+        <div className="cashier-content">
+          <div className="cashier-column">
+            <Typography.Text strong>选择支付方式</Typography.Text>
+            <button
+              type="button"
+              className={`cashier-method ${
+                selectedMethod === "alipay" ? "cashier-method-active" : ""
+              }`}
+              onClick={() => setSelectedMethod("alipay")}
+            >
+              <span className="cashier-method-main">
+                <AlipayCircleFilled className="cashier-method-icon" />
+                <span>
+                  <span className="cashier-method-title">支付宝</span>
+                </span>
+              </span>
+              {selectedMethod === "alipay" ? (
+                <CheckCircleFilled className="cashier-method-check" />
+              ) : null}
+            </button>
           </div>
 
-          <Steps
-            current={1}
-            items={[
-              { title: "订单创建" },
-              { title: "收银台展示" },
-              { title: "扫码支付" },
-              { title: "结果回调" }
-            ]}
-          />
-
-          <Row gutter={[24, 24]}>
-            <Col xs={24} lg={14}>
-              <div className="cashier-qr">
-                {orderInfo.status === "SUCCESS" ? (
-                  <Result
-                    status="success"
-                    title="支付成功"
-                    subTitle="平台已确认支付成功，后续会继续处理商户通知。"
-                  />
-                ) : orderInfo.status === "CLOSED" || orderInfo.status === "EXPIRED" ? (
-                  <Result
-                    status="warning"
-                    title="订单已关闭"
-                    subTitle={`当前订单状态为 ${orderInfo.status}，不会再继续创建新的支付会话。`}
-                  />
-                ) : primaryChannel?.actionType === "QR_CODE" && primaryChannel.qrContent ? (
-                  <Space
-                    direction="vertical"
-                    size={16}
-                    style={{ width: "100%", alignItems: "center" }}
-                  >
-                    <Typography.Title level={4} style={{ marginBottom: 0 }}>
-                      扫码支付
-                    </Typography.Title>
-                    <QRCode value={primaryChannel.qrContent} size={240} />
-                    <Typography.Text type="secondary">
-                      当前通道：{primaryChannel.displayName}
-                    </Typography.Text>
-                    <Button type="primary" onClick={() => setReloadKey((value) => value + 1)}>
-                      刷新支付会话
-                    </Button>
-                  </Space>
-                ) : primaryChannel?.actionType === "REDIRECT_URL" &&
-                  primaryChannel.payUrl ? (
-                  <Result
-                    status="info"
-                    title="拉起支付宝支付"
-                    subTitle="当前通道返回的是跳转链接，适合移动端 H5 / WAP 场景。"
-                    extra={[
-                      <Button
-                        key="open"
-                        type="primary"
-                        href={primaryChannel.payUrl}
-                        target="_blank"
-                      >
-                        打开支付宝
-                      </Button>,
-                      <Button
-                        key="refresh"
-                        onClick={() => setReloadKey((value) => value + 1)}
-                      >
-                        刷新支付会话
-                      </Button>
-                    ]}
-                  />
-                ) : (
-                  <Result
-                    status="info"
-                    title="支付会话准备中"
-                    subTitle="当前渠道还没有返回可扫码二维码或跳转链接。"
-                    extra={
-                      <Button type="primary" onClick={() => setReloadKey((value) => value + 1)}>
-                        刷新支付会话
-                      </Button>
-                    }
-                  />
-                )}
-              </div>
-            </Col>
-            <Col xs={24} lg={10}>
-              <Space direction="vertical" size={16} style={{ width: "100%" }}>
-                <Card size="small" title="订单信息">
-                  <Descriptions
-                    column={1}
-                    items={[
-                      {
-                        key: "platformOrderNo",
-                        label: "平台单号",
-                        children: orderInfo.platformOrderNo
-                      },
-                      {
-                        key: "amount",
-                        label: "金额",
-                        children: `${orderInfo.amount / 100} ${orderInfo.currency}`
-                      },
-                      {
-                        key: "expireTime",
-                        label: "有效期",
-                        children: orderInfo.expireTime
-                      },
-                      {
-                        key: "status",
-                        label: "订单状态",
-                        children: orderInfo.status
-                      }
-                    ]}
-                  />
-                </Card>
-
-                <Card size="small" title="支付方式">
-                  <Space direction="vertical" style={{ width: "100%" }} size={12}>
-                    {channels.map((item) => (
-                      <Card size="small" key={item.channel}>
-                        <Space direction="vertical" size={8} style={{ width: "100%" }}>
-                          <Space wrap>
-                            <Tag color={item.enabled ? "processing" : "default"}>
-                              {item.displayName}
-                            </Tag>
-                            <Tag>{item.integrationMode}</Tag>
-                            <Tag
-                              color={
-                                item.sessionStatus === "READY"
-                                  ? "green"
-                                  : item.sessionStatus === "FAILED"
-                                    ? "red"
-                                    : "gold"
-                              }
-                            >
-                              {item.sessionStatus}
-                            </Tag>
-                          </Space>
-                          <Typography.Text type="secondary">
-                            {item.note}
-                          </Typography.Text>
-                          {item.actionType === "QR_CODE" && item.qrContent ? (
-                            <Typography.Text>已生成二维码，可直接扫码。</Typography.Text>
-                          ) : null}
-                          {item.actionType === "REDIRECT_URL" && item.payUrl ? (
-                            <Button href={item.payUrl} target="_blank">
-                              打开 {item.displayName}
-                            </Button>
-                          ) : null}
-                        </Space>
-                      </Card>
-                    ))}
-                  </Space>
-                </Card>
-
-                <Card size="small" title="后续动作">
-                  <Typography.Paragraph style={{ marginBottom: 12 }}>
-                    下一阶段会把渠道预下单、支付状态轮询、支付成功页和商户回跳一起接进来。
-                  </Typography.Paragraph>
-                  <Button>
-                    <Link to="/dashboard">返回后台骨架</Link>
+          <div className="cashier-column">
+            <Card className="cashier-panel" bordered={false}>
+              {!selectedChannel ? (
+                <Space direction="vertical" size={12} className="cashier-panel-content">
+                  <Typography.Title level={4} style={{ margin: 0 }}>
+                    支付方式暂未开通
+                  </Typography.Title>
+                  <Typography.Text type="secondary">
+                    当前订单尚未返回可用的支付宝支付会话。
+                  </Typography.Text>
+                </Space>
+              ) : selectedChannel.sessionStatus === "READY" &&
+                selectedChannel.qrContent ? (
+                <Space direction="vertical" size={16} className="cashier-panel-content">
+                  <Typography.Title level={4} style={{ margin: 0 }}>
+                    支付宝扫码支付
+                  </Typography.Title>
+                  <QRCode value={selectedChannel.qrContent} size={220} />
+                  <Typography.Text type="secondary">
+                    请使用支付宝 App 扫码完成支付
+                  </Typography.Text>
+                </Space>
+              ) : selectedChannel.sessionStatus === "FAILED" ? (
+                <Space direction="vertical" size={12} className="cashier-panel-content">
+                  <Typography.Title level={4} style={{ margin: 0 }}>
+                    支付方式暂不可用
+                  </Typography.Title>
+                  <Typography.Text type="secondary">
+                    {resolveChannelFailureMessage(selectedChannel)}
+                  </Typography.Text>
+                  {selectedChannel.note ? (
+                    <Alert
+                      type="warning"
+                      showIcon
+                      message="渠道返回信息"
+                      description={selectedChannel.note}
+                    />
+                  ) : null}
+                  <Button type="primary" onClick={() => setReloadKey((value) => value + 1)}>
+                    重新获取二维码
                   </Button>
-                </Card>
-              </Space>
-            </Col>
-          </Row>
-        </Space>
+                </Space>
+              ) : selectedChannel.actionType === "REDIRECT_URL" && selectedChannel.payUrl ? (
+                <Space direction="vertical" size={12} className="cashier-panel-content">
+                  <Button type="primary" href={selectedChannel.payUrl} target="_blank">
+                    前往支付宝
+                  </Button>
+                </Space>
+              ) : (
+                <Space direction="vertical" size={12} className="cashier-panel-content">
+                  <Spin />
+                  <Typography.Title level={4} style={{ margin: 0 }}>
+                    正在生成支付宝二维码
+                  </Typography.Title>
+                  <Typography.Text type="secondary">
+                    页面会自动刷新支付状态，请稍候。
+                  </Typography.Text>
+                </Space>
+              )}
+            </Card>
+          </div>
+        </div>
       </Card>
     </div>
   );

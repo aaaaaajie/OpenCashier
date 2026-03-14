@@ -9,6 +9,7 @@ import {
   ChannelSessionPreviewInput,
   PaymentChannelCatalogItem,
   PaymentProviderCode,
+  ProviderConfigValidationResult,
   ProviderNotifyResult,
   StoredChannelAttempt
 } from "./payment-channel.types";
@@ -70,6 +71,13 @@ export abstract class BasePaymentChannelAdapter {
     throw new Error(`${this.providerCode} notify verification is not implemented`);
   }
 
+  async validateConfig(): Promise<ProviderConfigValidationResult> {
+    return this.buildValidationResult(
+      "UNSUPPORTED",
+      `${this.displayName} 暂未提供在线验证能力。`
+    );
+  }
+
   restoreSessionFromAttempt(
     input: StoredChannelAttempt
   ): ChannelSessionPreview {
@@ -88,7 +96,8 @@ export abstract class BasePaymentChannelAdapter {
       qrContent: input.qrContent ?? undefined,
       payUrl: input.payUrl ?? undefined,
       expireTime: input.expireTime ?? undefined,
-      note: input.failMessage ?? this.note
+      note: input.failMessage ?? this.note,
+      providerPayload: input.channelPayload ?? undefined
     });
   }
 
@@ -145,6 +154,21 @@ export abstract class BasePaymentChannelAdapter {
       note: this.note,
       sdkPackage: this.officialSdkPackage,
       ...overrides
+    };
+  }
+
+  protected buildValidationResult(
+    status: ProviderConfigValidationResult["status"],
+    message: string,
+    details?: Record<string, unknown>
+  ): ProviderConfigValidationResult {
+    return {
+      providerCode: this.providerCode,
+      displayName: this.displayName,
+      status,
+      message,
+      checkedAt: new Date().toISOString(),
+      details
     };
   }
 }

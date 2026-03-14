@@ -91,7 +91,12 @@ export interface RefundRecord {
   successTime: string | null;
 }
 
-const DEFAULT_ALLOWED_CHANNELS = ["wechat_qr", "alipay_qr", "alipay_wap"];
+const DEFAULT_ALLOWED_CHANNELS = [
+  "wechat_qr",
+  "alipay_qr",
+  "alipay_page",
+  "alipay_wap"
+];
 const REFUNDABLE_ORDER_STATUSES: PrismaOrderStatus[] = [
   PrismaOrderStatus.SUCCESS,
   PrismaOrderStatus.REFUND_PART,
@@ -865,7 +870,7 @@ export class PaymentStoreService implements OnModuleInit {
           status: PrismaMerchantStatus.ACTIVE,
           signType: PrismaSignType.HMAC_SHA256,
           secretCiphertext: "demo_app_secret",
-          allowedChannels: ["wechat_qr", "alipay_qr", "alipay_wap"]
+          allowedChannels: ["wechat_qr", "alipay_qr", "alipay_page", "alipay_wap"]
         },
         create: {
           merchantId: merchant.id,
@@ -874,7 +879,7 @@ export class PaymentStoreService implements OnModuleInit {
           status: PrismaMerchantStatus.ACTIVE,
           signType: PrismaSignType.HMAC_SHA256,
           secretCiphertext: "demo_app_secret",
-          allowedChannels: ["wechat_qr", "alipay_qr", "alipay_wap"]
+          allowedChannels: ["wechat_qr", "alipay_qr", "alipay_page", "alipay_wap"]
         }
       });
 
@@ -907,7 +912,7 @@ export class PaymentStoreService implements OnModuleInit {
           status: PrismaMerchantStatus.ACTIVE,
           signType: PrismaSignType.HMAC_SHA256,
           secretCiphertext: "demo_app_other_secret",
-          allowedChannels: ["wechat_qr", "alipay_qr"]
+          allowedChannels: ["wechat_qr", "alipay_qr", "alipay_page"]
         },
         create: {
           merchantId: merchant.id,
@@ -916,7 +921,7 @@ export class PaymentStoreService implements OnModuleInit {
           status: PrismaMerchantStatus.ACTIVE,
           signType: PrismaSignType.HMAC_SHA256,
           secretCiphertext: "demo_app_other_secret",
-          allowedChannels: ["wechat_qr", "alipay_qr"]
+          allowedChannels: ["wechat_qr", "alipay_qr", "alipay_page"]
         }
       });
 
@@ -938,7 +943,7 @@ export class PaymentStoreService implements OnModuleInit {
           successChannel: "wechat_qr",
           notifyUrl: "https://merchant.example.com/pay/notify",
           returnUrl: "https://merchant.example.com/pay/result",
-          allowedChannels: ["wechat_qr", "alipay_qr", "alipay_wap"],
+          allowedChannels: ["wechat_qr", "alipay_qr", "alipay_page", "alipay_wap"],
           expireTime,
           paidTime: now,
           metadata: {
@@ -959,7 +964,7 @@ export class PaymentStoreService implements OnModuleInit {
           successChannel: "wechat_qr",
           notifyUrl: "https://merchant.example.com/pay/notify",
           returnUrl: "https://merchant.example.com/pay/result",
-          allowedChannels: ["wechat_qr", "alipay_qr", "alipay_wap"],
+          allowedChannels: ["wechat_qr", "alipay_qr", "alipay_page", "alipay_wap"],
           expireTime,
           paidTime: now,
           metadata: {

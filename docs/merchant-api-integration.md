@@ -6,6 +6,7 @@
 
 - 对外商户接口统一走 `HMAC-SHA256` 签名，不支持生产可用的 `RSA2` 商户签名接入。
 - 推荐接入方式是：业务系统下单后，直接把用户带到平台返回的 `cashierUrl`。
+- 如果订单允许支付宝，平台默认收银台会按终端和后台已开通产品，在 `alipay_qr`、`alipay_page`、`alipay_wap` 之间自动选择并在失败时回退。
 - 支付渠道的异步通知先到平台，再由平台统一转发到商户 `notifyUrl`。
 - 目前支付宝链路最完整，已接通下单、查单、关单、退款和回调验签；其他渠道更多是骨架或占位能力。
 
@@ -50,7 +51,7 @@ sequenceDiagram
 
 - `appId`
 - `appSecret`
-- 允许使用的支付渠道列表，例如 `alipay_qr`、`alipay_wap`
+- 允许使用的支付渠道列表，例如 `alipay_qr`、`alipay_page`、`alipay_wap`
 - 平台 API 地址，例如 `https://pay.example.com/api/v1`
 
 当前代码里默认有两个可用于本地联调的 HMAC 演示应用：
@@ -78,7 +79,12 @@ sequenceDiagram
 - `WEB_BASE_URL`
   - 用来生成商户拿到的 `cashierUrl`
 - 对应支付渠道配置
-  - 例如支付宝的 `ALIPAY_APP_ID`、`ALIPAY_PRIVATE_KEY`、`ALIPAY_PUBLIC_KEY`、`ALIPAY_GATEWAY`
+  - 例如支付宝需要先选择 `ALIPAY_AUTH_MODE`
+  - `ALIPAY_PRODUCT_CAPABILITIES` 用来声明当前应用真实开通了哪些支付宝产品能力，统一收银台据此做二维码 / 网站支付 / WAP 路由
+  - 密钥模式：`ALIPAY_APP_ID`、`ALIPAY_PRIVATE_KEY`、`ALIPAY_PUBLIC_KEY`、`ALIPAY_GATEWAY`
+  - 证书模式：`ALIPAY_APP_ID`、`ALIPAY_PRIVATE_KEY`、`ALIPAY_APP_CERT`、`ALIPAY_PUBLIC_CERT`、`ALIPAY_ROOT_CERT`、`ALIPAY_GATEWAY`
+
+更细的支付宝路由说明见：[支付宝统一收银台路由说明](./alipay-unified-cashier-routing.md)
 
 ### 2.4 时间和幂等要求
 
@@ -92,6 +98,7 @@ sequenceDiagram
 | 渠道代码 | 当前状态 | 说明 |
 | --- | --- | --- |
 | `alipay_qr` | 可联调 | 已接通真实下单、查单、关单、退款、回调验签 |
+| `alipay_page` | 可联调 | 适合桌面端电脑网站支付 |
 | `alipay_wap` | 可联调 | 适合移动端 H5 / WAP 拉起 |
 | `wechat_qr` / `wechat_jsapi` | 骨架能力 | 当前主要是直连 API 预留，未形成完整真实交易链路 |
 | `stripe_checkout` | 骨架能力 | 当前只有渠道目录和配置检测，未形成完整真实交易链路 |
@@ -295,7 +302,7 @@ export function signMerchantRequest({ method, path, appId, timestamp, nonce, bod
   "notifyUrl": "https://merchant.example.com/pay/notify",
   "returnUrl": "https://merchant.example.com/pay/result",
   "expireInSeconds": 900,
-  "allowedChannels": ["alipay_qr", "alipay_wap"],
+  "allowedChannels": ["alipay_qr", "alipay_page", "alipay_wap"],
   "metadata": {
     "scene": "web_checkout",
     "userId": "U10001"
@@ -333,10 +340,10 @@ export function signMerchantRequest({ method, path, appId, timestamp, nonce, bod
         "providerCode": "ALIPAY",
         "displayName": "支付宝",
         "integrationMode": "OFFICIAL_NODE_SDK",
-        "supportedChannels": ["alipay_qr", "alipay_wap"],
+        "supportedChannels": ["alipay_qr", "alipay_page", "alipay_wap"],
         "officialSdkPackage": "alipay-sdk",
         "enabled": true,
-        "note": "优先使用支付宝官方 Node SDK；当前已接入二维码预下单、WAP 拉起、查单、关单、退款和回调验签。"
+        "note": "优先使用支付宝官方 Node SDK；当前已接入二维码预下单、电脑网站支付、WAP 拉起、查单、关单、退款和回调验签。"
       }
     ]
   }
@@ -358,6 +365,9 @@ export function signMerchantRequest({ method, path, appId, timestamp, nonce, bod
 
 - 服务端创建订单后，把 `cashierUrl` 返回给前端
 - 前端直接跳转或新开页面访问 `cashierUrl`
+- 当前默认收银台会先展示支付方式选择；如果订单允许支付宝，平台会根据桌面端 / 移动端和支付宝已开通产品，自动选择二维码、电脑网站支付或手机网站支付
+- 如果二维码产品未开通，但网站支付已开通，统一收银台会自动回退到 `alipay_page` 或 `alipay_wap`
+- 如果创建订单时传了 `returnUrl`，支付成功后收银台会自动跳回外部系统
 
 不推荐但可用的高级方式：
 
@@ -387,23 +397,23 @@ export function signMerchantRequest({ method, path, appId, timestamp, nonce, bod
       "expireTime": "2026-03-13T14:45:00.000Z",
       "createdAt": "2026-03-13T14:30:00.000Z",
       "paidTime": null,
-      "allowedChannels": ["alipay_qr", "alipay_wap"],
+      "allowedChannels": ["alipay_qr", "alipay_page", "alipay_wap"],
       "cashierUrl": "https://pay.example.com/cashier/xxx"
     },
     "channels": [
       {
         "providerCode": "ALIPAY",
-        "channel": "alipay_qr",
+        "channel": "alipay_page",
         "displayName": "支付宝",
         "integrationMode": "OFFICIAL_NODE_SDK",
         "enabled": true,
         "sessionStatus": "READY",
-        "actionType": "QR_CODE",
+        "actionType": "REDIRECT_URL",
         "attemptNo": "A20260313143000001",
         "channelRequestNo": "P20260313143000999",
-        "qrContent": "https://qr.alipay.com/xxx",
+        "payUrl": "https://openapi.alipay.com/gateway.do?...",
         "expireTime": "2026-03-13T14:45:00.000Z",
-        "note": "优先使用支付宝官方 Node SDK；当前已接入二维码预下单、WAP 拉起、查单、关单、退款和回调验签。"
+        "note": "优先使用支付宝官方 Node SDK；当前已接入二维码预下单、电脑网站支付、WAP 拉起、查单、关单、退款和回调验签。"
       }
     ]
   }
@@ -417,6 +427,9 @@ export function signMerchantRequest({ method, path, appId, timestamp, nonce, bod
 - `actionType`
   - `QR_CODE` 表示展示二维码
   - `REDIRECT_URL` 表示跳转链接
+- `channel`
+  - 可能返回 `alipay_qr`、`alipay_page`、`alipay_wap`
+  - 如果商户订单允许任一支付宝通道，平台默认收银台可能在同一支付宝内自动切换到另一个真实可用产品
 - `qrContent`
   - 二维码内容
 - `payUrl`
@@ -579,7 +592,7 @@ hex(HMAC_SHA256(appSecret, signingContent))
   "paidAmount": 9900,
   "status": "SUCCESS",
   "currency": "CNY",
-  "channel": "alipay_qr",
+  "channel": "alipay_page",
   "paidTime": "2026-03-13T14:31:00.000Z"
 }
 ```

@@ -5,6 +5,7 @@ import {
   OnModuleInit
 } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
+import { AsyncLocalStorage } from "node:async_hooks";
 import {
   createCipheriv,
   createDecipheriv,
@@ -24,6 +25,7 @@ import {
 
 type PlatformConfigGroupValue = Record<string, string>;
 type AdminPlatformConfigValue = Record<string, string | null>;
+type PlatformConfigStage = "ACTIVE" | "DRAFT";
 
 interface CachedPlatformConfigGroup {
   id: string;
@@ -38,20 +40,32 @@ interface UpsertPlatformConfigInput {
   value: Record<string, unknown>;
 }
 
-export interface AdminPlatformConfigRecord {
+interface AdminPlatformConfigStageRecord {
   id: string;
-  key: string;
   value: AdminPlatformConfigValue;
   createdAt: Date;
   updatedAt: Date;
 }
 
+export interface AdminPlatformConfigRecord {
+  key: string;
+  active?: AdminPlatformConfigStageRecord;
+  draft?: AdminPlatformConfigStageRecord;
+}
+
 @Injectable()
 export class PlatformConfigService implements OnModuleInit {
   private readonly logger = new Logger(PlatformConfigService.name);
-  private readonly databaseConfigCache = new Map<
+  private readonly activeConfigCache = new Map<
     PlatformConfigGroupKey,
     CachedPlatformConfigGroup
+  >();
+  private readonly draftConfigCache = new Map<
+    PlatformConfigGroupKey,
+    CachedPlatformConfigGroup
+  >();
+  private readonly previewContext = new AsyncLocalStorage<
+    Map<PlatformConfigGroupKey, PlatformConfigGroupValue>
   >();
 
   constructor(private readonly prismaService: PrismaService) {}
@@ -67,7 +81,13 @@ export class PlatformConfigService implements OnModuleInit {
       return undefined;
     }
 
-    const cached = this.databaseConfigCache.get(groupKey);
+    const previewGroup = this.previewContext.getStore()?.get(groupKey);
+
+    if (previewGroup) {
+      return previewGroup[key];
+    }
+
+    const cached = this.activeConfigCache.get(groupKey);
     const rawValue = cached?.value[key];
 
     if (!rawValue) {
@@ -84,15 +104,37 @@ export class PlatformConfigService implements OnModuleInit {
   }
 
   listConfigs(): AdminPlatformConfigRecord[] {
-    return Array.from(this.databaseConfigCache.values())
-      .sort((left, right) => left.createdAt.getTime() - right.createdAt.getTime())
-      .map((record) => ({
-        id: record.id,
-        key: record.key,
-        value: this.toAdminValue(record.key, record.value),
-        createdAt: record.createdAt,
-        updatedAt: record.updatedAt
-      }));
+    const keys = new Set<PlatformConfigGroupKey>([
+      ...this.activeConfigCache.keys(),
+      ...this.draftConfigCache.keys()
+    ]);
+
+    return Array.from(keys)
+      .sort((left, right) => left.localeCompare(right))
+      .map((key) => {
+        const active = this.activeConfigCache.get(key);
+        const draft = this.draftConfigCache.get(key);
+
+        return {
+          key,
+          active: active
+            ? {
+                id: active.id,
+                value: this.toAdminValue(key, active.value),
+                createdAt: active.createdAt,
+                updatedAt: active.updatedAt
+              }
+            : undefined,
+          draft: draft
+            ? {
+                id: draft.id,
+                value: this.toAdminValue(key, draft.value),
+                createdAt: draft.createdAt,
+                updatedAt: draft.updatedAt
+              }
+            : undefined
+        };
+      });
   }
 
   async upsertConfig(
@@ -112,27 +154,24 @@ export class PlatformConfigService implements OnModuleInit {
       );
     }
 
-    const nextValue = this.mergeGroupValue(
-      groupDefinition,
-      this.getResolvedGroupValue(input.key),
-      input.value
-    );
+    const nextValue = this.buildPreviewGroupValue(input.key, input.value);
+    const storageKey = this.toStorageKey(input.key, "DRAFT");
 
     try {
       if (Object.keys(nextValue).length === 0) {
         await this.prismaService.platformConfig.deleteMany({
-          where: { key: input.key }
+          where: { key: storageKey }
         });
       } else {
         const persistedValue = this.toPersistedValue(groupDefinition, nextValue);
 
         await this.prismaService.platformConfig.upsert({
-          where: { key: input.key },
+          where: { key: storageKey },
           update: {
             value: persistedValue
           },
           create: {
-            key: input.key,
+            key: storageKey,
             value: persistedValue
           }
         });
@@ -155,7 +194,11 @@ export class PlatformConfigService implements OnModuleInit {
 
     try {
       await this.prismaService.platformConfig.deleteMany({
-        where: { key }
+        where: {
+          key: {
+            in: [this.toStorageKey(key, "ACTIVE"), this.toStorageKey(key, "DRAFT")]
+          }
+        }
       });
     } catch (error) {
       this.rethrowIfStorageMissing(error);
@@ -166,20 +209,85 @@ export class PlatformConfigService implements OnModuleInit {
     return this.listConfigs();
   }
 
+  async activateConfig(key: string): Promise<AdminPlatformConfigRecord[]> {
+    if (!isPlatformConfigGroupKey(key)) {
+      throw new BadRequestException(
+        `unsupported platform config group key: ${key}`
+      );
+    }
+
+    const draft = this.draftConfigCache.get(key);
+
+    if (!draft) {
+      throw new BadRequestException(`${key} has no draft config to activate`);
+    }
+
+    try {
+      await this.prismaService.platformConfig.upsert({
+        where: { key },
+        update: {
+          value: draft.value as Prisma.InputJsonObject
+        },
+        create: {
+          key,
+          value: draft.value as Prisma.InputJsonObject
+        }
+      });
+
+      await this.prismaService.platformConfig.deleteMany({
+        where: { key: this.toStorageKey(key, "DRAFT") }
+      });
+    } catch (error) {
+      this.rethrowIfStorageMissing(error);
+      throw error;
+    }
+
+    await this.reloadCache();
+    return this.listConfigs();
+  }
+
+  async runWithPreview<T>(
+    key: string,
+    patchValue: Record<string, unknown>,
+    callback: () => Promise<T>
+  ): Promise<T> {
+    if (!isPlatformConfigGroupKey(key)) {
+      throw new BadRequestException(
+        `unsupported platform config group key: ${key}`
+      );
+    }
+
+    const previewValue = this.buildPreviewGroupValue(key, patchValue);
+    const currentStore = this.previewContext.getStore();
+    const nextStore = new Map(currentStore ?? []);
+
+    nextStore.set(key, previewValue);
+
+    return this.previewContext.run(nextStore, callback);
+  }
+
   private async reloadCache(): Promise<void> {
     try {
       const records = await this.prismaService.platformConfig.findMany();
-      this.databaseConfigCache.clear();
+      this.activeConfigCache.clear();
+      this.draftConfigCache.clear();
 
       records.forEach((record) => {
-        if (!isPlatformConfigGroupKey(record.key)) {
+        const parsedKey = this.parseStorageKey(record.key);
+
+        if (!parsedKey) {
           return;
         }
 
-        this.databaseConfigCache.set(record.key, {
+        const targetCache =
+          parsedKey.stage === "DRAFT"
+            ? this.draftConfigCache
+            : this.activeConfigCache;
+
+        targetCache.set(parsedKey.key, {
           id: record.id,
-          key: record.key,
-          value: this.normalizeStoredGroupValue(record.key, record.value),
+          key: parsedKey.key,
+          value: this.normalizeStoredGroupValue(parsedKey.key, record.value),
           createdAt: record.createdAt,
           updatedAt: record.updatedAt
         });
@@ -189,11 +297,37 @@ export class PlatformConfigService implements OnModuleInit {
         throw error;
       }
 
-      this.databaseConfigCache.clear();
+      this.activeConfigCache.clear();
+      this.draftConfigCache.clear();
       this.logger.warn(
         "platform_config table is not ready yet, platform config reads will return empty values"
       );
     }
+  }
+
+  private buildPreviewGroupValue(
+    key: string,
+    patchValue: Record<string, unknown>
+  ): PlatformConfigGroupValue {
+    if (!isPlatformConfigGroupKey(key)) {
+      throw new BadRequestException(
+        `unsupported platform config group key: ${key}`
+      );
+    }
+
+    const groupDefinition = getPlatformConfigGroupDefinition(key);
+
+    if (!groupDefinition) {
+      throw new BadRequestException(
+        `unsupported platform config group key: ${key}`
+      );
+    }
+
+    return this.mergeGroupValue(
+      groupDefinition,
+      this.getEditableGroupValue(key),
+      patchValue
+    );
   }
 
   private mergeGroupValue(
@@ -233,11 +367,12 @@ export class PlatformConfigService implements OnModuleInit {
     return nextValue;
   }
 
-  private getResolvedGroupValue(
+  private getEditableGroupValue(
     groupKey: PlatformConfigGroupKey
   ): PlatformConfigGroupValue {
     const groupDefinition = getPlatformConfigGroupDefinition(groupKey);
-    const cached = this.databaseConfigCache.get(groupKey);
+    const cached =
+      this.draftConfigCache.get(groupKey) ?? this.activeConfigCache.get(groupKey);
 
     if (!groupDefinition || !cached) {
       return {};
@@ -256,6 +391,35 @@ export class PlatformConfigService implements OnModuleInit {
 
       return result;
     }, {});
+  }
+
+  private toStorageKey(
+    key: PlatformConfigGroupKey,
+    stage: PlatformConfigStage
+  ): string {
+    return stage === "ACTIVE" ? key : `${key}__draft`;
+  }
+
+  private parseStorageKey(
+    key: string
+  ): { key: PlatformConfigGroupKey; stage: PlatformConfigStage } | undefined {
+    if (isPlatformConfigGroupKey(key)) {
+      return {
+        key,
+        stage: "ACTIVE"
+      };
+    }
+
+    const draftKey = key.replace(/__draft$/, "");
+
+    if (!isPlatformConfigGroupKey(draftKey) || draftKey === key) {
+      return undefined;
+    }
+
+    return {
+      key: draftKey,
+      stage: "DRAFT"
+    };
   }
 
   private normalizeStoredGroupValue(

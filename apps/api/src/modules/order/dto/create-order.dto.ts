@@ -56,7 +56,7 @@ export class CreateOrderDto {
   expireInSeconds?: number;
 
   @ApiPropertyOptional({
-    example: ["wechat_qr", "alipay_qr"],
+    example: ["wechat_qr", "alipay_qr", "alipay_page"],
     type: [String]
   })
   @IsOptional()
@@ -74,4 +74,3 @@ export class CreateOrderDto {
   @IsObject()
   metadata?: Record<string, unknown>;
 }
-

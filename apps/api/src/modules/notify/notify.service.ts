@@ -31,7 +31,7 @@ export class NotifyService {
         )
       : await this.paymentAttemptService.findLatestAttemptForOrder(
           event.platformOrderNo,
-          ["alipay_qr", "alipay_wap"]
+          ["alipay_qr", "alipay_page", "alipay_wap"]
         );
 
     if (attempt) {

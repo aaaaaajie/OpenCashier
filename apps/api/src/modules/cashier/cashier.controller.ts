@@ -1,4 +1,4 @@
-import { Controller, Get, Param } from "@nestjs/common";
+import { Controller, Get, Param, Query } from "@nestjs/common";
 import { ApiOperation, ApiParam, ApiTags } from "@nestjs/swagger";
 import { CashierService } from "./cashier.service";
 
@@ -13,7 +13,10 @@ export class CashierController {
       "Get cashier session and channel previews using official SDK first / API fallback strategy"
   })
   @ApiParam({ name: "cashierToken" })
-  getCashierSession(@Param("cashierToken") cashierToken: string) {
-    return this.cashierService.getCashierSession(cashierToken);
+  getCashierSession(
+    @Param("cashierToken") cashierToken: string,
+    @Query("terminal") terminal?: string
+  ) {
+    return this.cashierService.getCashierSession(cashierToken, terminal);
   }
 }

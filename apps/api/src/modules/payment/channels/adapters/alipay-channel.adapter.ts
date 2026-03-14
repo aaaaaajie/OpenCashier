@@ -1,4 +1,5 @@
 import { BadGatewayException, BadRequestException, Injectable } from "@nestjs/common";
+import { createHash } from "node:crypto";
 import { BasePaymentChannelAdapter } from "../base-payment-channel.adapter";
 import { ChannelProviderConfigService } from "../channel-provider-config.service";
 import {
@@ -10,6 +11,7 @@ import {
   ChannelRefundResult,
   ChannelSessionPreview,
   ChannelSessionPreviewInput,
+  ProviderConfigValidationResult,
   ProviderNotifyResult
 } from "../payment-channel.types";
 
@@ -24,6 +26,11 @@ interface AlipayClientLike {
     httpMethod: string,
     bizParams: Record<string, unknown>
   ): Promise<string> | string;
+  curl(
+    httpMethod: string,
+    path: string,
+    options?: Record<string, unknown>
+  ): Promise<unknown>;
   checkNotifySignV2(postData: Record<string, unknown>): boolean;
 }
 
@@ -31,17 +38,21 @@ type AlipayModuleLike = {
   AlipaySdk: new (config: Record<string, unknown>) => AlipayClientLike;
 };
 
+const ALIPAY_SANDBOX_GUIDE_URL =
+  "https://opendocs.alipay.com/open/00dn7o?pathHash=c1e36251";
+
 @Injectable()
 export class AlipayChannelAdapter extends BasePaymentChannelAdapter {
   readonly providerCode = "ALIPAY" as const;
   readonly displayName = "支付宝";
   readonly integrationMode = "OFFICIAL_NODE_SDK" as const;
-  readonly supportedChannels = ["alipay_qr", "alipay_wap"];
+  readonly supportedChannels = ["alipay_qr", "alipay_page", "alipay_wap"];
   readonly officialSdkPackage = "alipay-sdk";
   override readonly notifyPath = "/api/v1/notify/alipay";
   readonly note =
-    "优先使用支付宝官方 Node SDK；当前已接入二维码预下单、WAP 拉起、查单、关单、退款和回调验签。";
+    "优先使用支付宝官方 Node SDK；当前已接入二维码预下单、电脑网站支付、WAP 拉起、查单、关单、退款和回调验签。";
   private clientPromise?: Promise<AlipayClientLike>;
+  private clientCacheKey?: string;
 
   constructor(
     private readonly channelProviderConfigService: ChannelProviderConfigService
@@ -72,6 +83,10 @@ export class AlipayChannelAdapter extends BasePaymentChannelAdapter {
       return this.createWapSession(input);
     }
 
+    if (input.channel === "alipay_page") {
+      return this.createPageSession(input);
+    }
+
     return this.buildFailedSession(input, `unsupported alipay channel: ${input.channel}`);
   }
 
@@ -92,7 +107,7 @@ export class AlipayChannelAdapter extends BasePaymentChannelAdapter {
         }
       },
       {
-        validateSign: Boolean(this.channelProviderConfigService.getAlipayConfig().publicKey)
+        validateSign: this.channelProviderConfigService.hasAlipayVerifyConfig()
       }
     );
     const payload = this.unwrapExecResponse("alipay.trade.query", response);
@@ -146,7 +161,7 @@ export class AlipayChannelAdapter extends BasePaymentChannelAdapter {
         }
       },
       {
-        validateSign: Boolean(this.channelProviderConfigService.getAlipayConfig().publicKey)
+        validateSign: this.channelProviderConfigService.hasAlipayVerifyConfig()
       }
     );
     const payload = this.unwrapExecResponse("alipay.trade.close", response);
@@ -195,7 +210,7 @@ export class AlipayChannelAdapter extends BasePaymentChannelAdapter {
         }
       },
       {
-        validateSign: Boolean(this.channelProviderConfigService.getAlipayConfig().publicKey)
+        validateSign: this.channelProviderConfigService.hasAlipayVerifyConfig()
       }
     );
     const payload = this.unwrapExecResponse("alipay.trade.refund", response);
@@ -261,6 +276,189 @@ export class AlipayChannelAdapter extends BasePaymentChannelAdapter {
     };
   }
 
+  override async validateConfig(): Promise<ProviderConfigValidationResult> {
+    const config = this.channelProviderConfigService.getAlipayConfig();
+    const capabilities =
+      this.channelProviderConfigService.getAlipayProductCapabilities();
+    const details = {
+      authMode: config.authMode,
+      gateway: config.gateway,
+      capabilities,
+      endpoint: config.gateway
+        ? this.resolveEndpointFromGateway(config.gateway)
+        : undefined
+    };
+
+    if (!this.isEnabled()) {
+      return this.buildValidationResult(
+        "FAILED",
+        "支付宝配置不完整，无法执行在线验证。",
+        details
+      );
+    }
+
+    try {
+      const client = await this.getClient();
+      const probeOrderNo = this.buildValidationProbeOrderNo("QUERY");
+      const response = await client.exec(
+        "alipay.trade.query",
+        {
+          bizContent: {
+            out_trade_no: probeOrderNo
+          }
+        },
+        {
+          validateSign: this.channelProviderConfigService.hasAlipayVerifyConfig()
+        }
+      );
+      const payload = this.unwrapExecResponse("alipay.trade.query", response);
+      const responseCode = this.asOptionalString(payload.code);
+      const responseSubCode = this.asOptionalString(
+        payload.subCode ?? payload.sub_code
+      );
+      const responseMessage = this.asOptionalString(
+        payload.subMsg ?? payload.sub_msg ?? payload.msg
+      );
+
+      if (responseCode !== "10000" && responseCode !== "40004") {
+        return this.buildValidationResult("FAILED", responseMessage ?? "支付宝配置验证未通过。", {
+          ...details,
+          responseCode,
+          responseSubCode,
+          probeMethod: "alipay.trade.query",
+          probeOrderNo
+        });
+      }
+
+      const capabilityChecks = await this.validateConfiguredCapabilities(
+        client,
+        capabilities
+      );
+
+      return this.buildValidationResult(
+        "SUCCESS",
+        this.buildValidationSuccessMessage(capabilities, capabilityChecks),
+        {
+          ...details,
+          responseCode,
+          responseSubCode,
+          probeMethod: "alipay.trade.query",
+          probeOrderNo,
+          capabilityChecks
+        }
+      );
+    } catch (error) {
+      return this.buildValidationResult(
+        "FAILED",
+        error instanceof Error ? error.message : "支付宝配置验证失败",
+        details
+      );
+    }
+  }
+
+  private async validateConfiguredCapabilities(
+    client: AlipayClientLike,
+    capabilities: string[]
+  ): Promise<Record<string, string>> {
+    const checks: Record<string, string> = {};
+
+    if (capabilities.includes("PAGE")) {
+      const payUrl = await this.pageExecuteCompat(
+        client,
+        "alipay.trade.page.pay",
+        {
+          notify_url: "https://example.com/api/v1/notify/alipay",
+          return_url: "https://example.com/payment/return",
+          bizContent: {
+            out_trade_no: this.buildValidationProbeOrderNo("PAGE"),
+            total_amount: "0.01",
+            subject: "平台配置验证",
+            product_code: "FAST_INSTANT_TRADE_PAY",
+            timeout_express: "5m"
+          }
+        }
+      );
+
+      checks.PAGE = this.validateGeneratedPayUrl(payUrl, "alipay.trade.page.pay");
+    }
+
+    if (capabilities.includes("WAP")) {
+      const payUrl = await this.pageExecuteCompat(
+        client,
+        "alipay.trade.wap.pay",
+        {
+          notify_url: "https://example.com/api/v1/notify/alipay",
+          return_url: "https://example.com/payment/return",
+          bizContent: {
+            out_trade_no: this.buildValidationProbeOrderNo("WAP"),
+            total_amount: "0.01",
+            subject: "平台配置验证",
+            product_code: "QUICK_WAP_WAY",
+            quit_url: "https://example.com/payment/cancel",
+            timeout_express: "5m"
+          }
+        }
+      );
+
+      checks.WAP = this.validateGeneratedPayUrl(payUrl, "alipay.trade.wap.pay");
+    }
+
+    if (capabilities.includes("QR")) {
+      checks.QR = "SKIPPED_REAL_PROBE_REQUIRED";
+    }
+
+    return checks;
+  }
+
+  private validateGeneratedPayUrl(payUrl: string, method: string): string {
+    const normalizedUrl = payUrl.trim();
+
+    if (!normalizedUrl.startsWith("http")) {
+      throw new BadGatewayException(`${method} did not return a valid pay url`);
+    }
+
+    const url = new URL(normalizedUrl);
+
+    if (!url.searchParams.get("sign")) {
+      throw new BadGatewayException(`${method} did not include sign in pay url`);
+    }
+
+    return "URL_SIGNED";
+  }
+
+  private buildValidationSuccessMessage(
+    capabilities: string[],
+    capabilityChecks: Record<string, string>
+  ): string {
+    const validatedCapabilities = capabilities
+      .map((capability) => {
+        const check = capabilityChecks[capability];
+
+        if (!check) {
+          return undefined;
+        }
+
+        if (check === "SKIPPED_REAL_PROBE_REQUIRED") {
+          return `${capability} 已声明，未执行真实交易探测`;
+        }
+
+        return `${capability} 已完成签名校验`;
+      })
+      .filter((item): item is string => Boolean(item));
+
+    if (validatedCapabilities.length === 0) {
+      return "支付宝配置验证通过。";
+    }
+
+    return `支付宝配置验证通过。${validatedCapabilities.join("；")}。`;
+  }
+
+  private buildValidationProbeOrderNo(prefix: string): string {
+    return `CFG${prefix}${Date.now()}${Math.random().toString(36).slice(2, 8)}`
+      .toUpperCase()
+      .slice(0, 64);
+  }
+
   private async createQrSession(
     input: ChannelSessionPreviewInput
   ): Promise<ChannelSessionPreview> {
@@ -278,7 +476,7 @@ export class AlipayChannelAdapter extends BasePaymentChannelAdapter {
         }
       },
       {
-        validateSign: Boolean(this.channelProviderConfigService.getAlipayConfig().publicKey)
+        validateSign: this.channelProviderConfigService.hasAlipayVerifyConfig()
       }
     );
     const payload = this.unwrapExecResponse(
@@ -305,7 +503,10 @@ export class AlipayChannelAdapter extends BasePaymentChannelAdapter {
         input.platformOrderNo,
       qrContent,
       expireTime: input.expireTime,
-      providerPayload: payload
+      providerPayload: {
+        ...payload,
+        ...this.buildCashierMetadata("SCAN_QR")
+      }
     });
   }
 
@@ -335,22 +536,88 @@ export class AlipayChannelAdapter extends BasePaymentChannelAdapter {
       payUrl,
       expireTime: input.expireTime,
       providerPayload: {
-        method: "alipay.trade.wap.pay"
+        method: "alipay.trade.wap.pay",
+        ...this.buildCashierMetadata("OPEN_WAP")
       }
     });
   }
 
+  private async createPageSession(
+    input: ChannelSessionPreviewInput
+  ): Promise<ChannelSessionPreview> {
+    const client = await this.getClient();
+    const payUrl = await this.pageExecuteCompat(client, "alipay.trade.page.pay", {
+      notify_url: input.notifyUrl,
+      return_url: input.returnUrl,
+      bizContent: {
+        out_trade_no: input.platformOrderNo,
+        total_amount: this.formatAmount(input.amount),
+        subject: input.subject,
+        body: input.description,
+        product_code: "FAST_INSTANT_TRADE_PAY",
+        timeout_express: this.toTimeoutExpress(input.expireTime)
+      }
+    });
+
+    return this.buildSession(input.channel, {
+      sessionStatus: "READY",
+      actionType: "REDIRECT_URL",
+      attemptNo: input.attemptNo,
+      channelRequestNo: input.platformOrderNo,
+      payUrl,
+      expireTime: input.expireTime,
+      providerPayload: {
+        method: "alipay.trade.page.pay",
+        ...this.buildCashierMetadata("OPEN_PAGE")
+      }
+    });
+  }
+
+  private buildCashierMetadata(
+    recommendedAction: "SCAN_QR" | "OPEN_PAGE" | "OPEN_WAP"
+  ) {
+    const gateway = this.channelProviderConfigService.getAlipayConfig().gateway;
+    const sandbox = this.isSandboxGateway(gateway);
+
+    return {
+      __cashierEnv: {
+        provider: "ALIPAY",
+        mode: sandbox ? "SANDBOX" : "LIVE",
+        gateway,
+        guideUrl: ALIPAY_SANDBOX_GUIDE_URL,
+        hint: sandbox
+          ? "当前为支付宝沙箱环境，请使用支付宝沙箱版 App 和沙箱买家账号测试。"
+          : undefined,
+        recommendedAction
+      }
+    };
+  }
+
+  private isSandboxGateway(gateway: string | undefined): boolean {
+    if (!gateway) {
+      return false;
+    }
+
+    return /sandbox|alipaydev\.com/i.test(gateway);
+  }
+
   private async getClient(): Promise<AlipayClientLike> {
-    if (!this.clientPromise) {
-      this.clientPromise = this.createClient();
+    const sdkConfig = this.channelProviderConfigService.getAlipaySdkConfig();
+    const cacheKey = createHash("sha256")
+      .update(JSON.stringify(sdkConfig))
+      .digest("hex");
+
+    if (!this.clientPromise || this.clientCacheKey !== cacheKey) {
+      this.clientCacheKey = cacheKey;
+      this.clientPromise = this.createClient(sdkConfig);
     }
 
     return this.clientPromise;
   }
 
-  private async createClient(): Promise<AlipayClientLike> {
-    const config = this.channelProviderConfigService.getAlipaySdkConfig();
-
+  private async createClient(
+    config: ReturnType<ChannelProviderConfigService["getAlipaySdkConfig"]>
+  ): Promise<AlipayClientLike> {
     // Preserve native dynamic import so the ESM-only SDK can be loaded from this CJS Nest app.
     const loadModule = new Function(
       "modulePath",
@@ -358,16 +625,34 @@ export class AlipayChannelAdapter extends BasePaymentChannelAdapter {
     ) as (modulePath: string) => Promise<AlipayModuleLike>;
     const { AlipaySdk } = await loadModule("alipay-sdk");
 
-    return new AlipaySdk({
+    const baseConfig = {
       appId: config.appId,
-      privateKey: this.normalizePem(config.privateKey),
-      alipayPublicKey: config.publicKey
-        ? this.normalizePem(config.publicKey)
-        : undefined,
+      privateKey: this.normalizeMultilineContent(config.privateKey),
       gateway: config.gateway,
+      endpoint: this.resolveEndpointFromGateway(config.gateway),
       signType: "RSA2",
       camelcase: true,
       keyType: this.detectKeyType(config.privateKey)
+    };
+
+    if (config.authMode === "CERT") {
+      return new AlipaySdk({
+        ...baseConfig,
+        appCertContent: this.normalizeMultilineContent(config.appCert),
+        alipayPublicCertContent: this.normalizeMultilineContent(
+          config.alipayPublicCert
+        ),
+        alipayRootCertContent: this.normalizeMultilineContent(
+          config.alipayRootCert
+        )
+      }) as unknown as AlipayClientLike;
+    }
+
+    return new AlipaySdk({
+      ...baseConfig,
+      alipayPublicKey: config.publicKey
+        ? this.normalizeMultilineContent(config.publicKey)
+        : undefined
     }) as unknown as AlipayClientLike;
   }
 
@@ -417,8 +702,12 @@ export class AlipayChannelAdapter extends BasePaymentChannelAdapter {
     return typedPayload;
   }
 
-  private normalizePem(content: string): string {
+  private normalizeMultilineContent(content: string): string {
     return content.replace(/\\n/g, "\n").trim();
+  }
+
+  private resolveEndpointFromGateway(gateway: string): string {
+    return gateway.replace(/\/gateway\.do(?:\?.*)?$/, "");
   }
 
   private detectKeyType(content: string): "PKCS1" | "PKCS8" {

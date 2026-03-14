@@ -8,6 +8,10 @@ export type IntegrationMode = "OFFICIAL_NODE_SDK" | "DIRECT_API";
 export type ChannelSessionStatus = "PENDING" | "READY" | "FAILED";
 export type ChannelActionType = "NONE" | "QR_CODE" | "REDIRECT_URL";
 export type ChannelTradeStatus = "WAIT_PAY" | "SUCCESS" | "CLOSED";
+export type ProviderConfigValidationStatus =
+  | "SUCCESS"
+  | "FAILED"
+  | "UNSUPPORTED";
 
 export interface PaymentChannelCatalogItem {
   providerCode: PaymentProviderCode;
@@ -43,6 +47,7 @@ export interface StoredChannelAttempt {
   payUrl?: string | null;
   expireTime?: string | null;
   failMessage?: string | null;
+  channelPayload?: Record<string, unknown> | null;
 }
 
 export interface ChannelOrderQueryInput {
@@ -117,4 +122,13 @@ export interface ChannelSessionPreview {
   payUrl?: string;
   expireTime?: string;
   providerPayload?: Record<string, unknown>;
+}
+
+export interface ProviderConfigValidationResult {
+  providerCode: PaymentProviderCode;
+  displayName: string;
+  status: ProviderConfigValidationStatus;
+  message: string;
+  checkedAt: string;
+  details?: Record<string, unknown>;
 }

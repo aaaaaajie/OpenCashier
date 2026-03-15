@@ -28,7 +28,8 @@ import { PlatformConfigService } from "./platform-config.service";
     ChannelProviderConfigService,
     PaymentChannelRegistryService,
     PaymentAttemptService,
-    AlipayChannelAdapter
+    AlipayChannelAdapter,
+    WechatPayChannelAdapter
   ]
 })
 export class PaymentModule {}

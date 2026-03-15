@@ -9,7 +9,8 @@ import { ResponseEnvelopeInterceptor } from "./common/interceptors/response-enve
 
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule, {
-    cors: true
+    cors: true,
+    rawBody: true
   });
 
   app.setGlobalPrefix("api");

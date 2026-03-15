@@ -5,6 +5,8 @@ export type PlatformConfigInputType =
   | "SELECT"
   | "MULTI_SELECT";
 
+export type PlatformConfigWechatPayVerifyMode = "PUBLIC_KEY" | "CERT";
+
 export interface PlatformConfigItemOption {
   label: string;
   value: string;
@@ -18,6 +20,7 @@ export interface PlatformConfigItemDefinition {
   inputType: PlatformConfigInputType;
   placeholder?: string;
   options?: PlatformConfigItemOption[];
+  visibleInWechatPayVerifyModes?: PlatformConfigWechatPayVerifyMode[];
 }
 
 export interface PlatformConfigGroupDefinition {
@@ -159,12 +162,30 @@ export const PLATFORM_CONFIG_GROUPS: PlatformConfigGroupDefinition[] = [
   {
     key: "wechatpay",
     label: "微信支付配置",
-    description: "微信支付当前为 API 直连占位，配置齐全后会自动切换为已配置状态。",
+    description:
+      "按微信支付 API v3 直连；支持“微信支付公钥模式”和“平台证书模式”，私钥/公钥/证书支持直接粘贴内容或填写服务器本地文件路径。",
     items: [
+      {
+        key: "WECHATPAY_VERIFY_MODE",
+        label: "验签方式",
+        description: "选择使用微信支付公钥模式，或使用微信支付平台证书模式。",
+        secret: false,
+        inputType: "SELECT",
+        options: [
+          {
+            label: "微信支付公钥模式",
+            value: "PUBLIC_KEY"
+          },
+          {
+            label: "平台证书模式",
+            value: "CERT"
+          }
+        ]
+      },
       {
         key: "WECHATPAY_APP_ID",
         label: "应用 ID",
-        description: "微信开放平台或服务商应用 ID。",
+        description: "微信开放平台、公众号或小程序的 AppId，需与商户号绑定。",
         secret: false,
         inputType: "TEXT"
       },
@@ -178,18 +199,62 @@ export const PLATFORM_CONFIG_GROUPS: PlatformConfigGroupDefinition[] = [
       {
         key: "WECHATPAY_API_V3_KEY",
         label: "API v3 密钥",
-        description: "微信支付 API v3 证书解密和签名相关密钥。",
+        description: "用于解密微信支付回调报文，长度必须为 32 字节。",
         secret: true,
         inputType: "PASSWORD",
         placeholder: "已配置时不会回显，重新输入会覆盖当前数据库配置"
       },
       {
+        key: "WECHATPAY_MCH_SERIAL_NO",
+        label: "商户证书序列号",
+        description: "商户 API 证书序列号，请求微信支付 API 时参与 Authorization 头签名。",
+        secret: false,
+        inputType: "TEXT"
+      },
+      {
         key: "WECHATPAY_PRIVATE_KEY",
         label: "商户私钥",
-        description: "支持直接粘贴 PEM 内容，或填写服务器可访问的密钥文件路径。",
+        description:
+          "商户 API 证书对应私钥，支持直接粘贴 PEM 内容，或填写服务器可访问的密钥文件路径。",
         secret: true,
         inputType: "TEXTAREA",
         placeholder: "已配置时不会回显，重新输入会覆盖当前数据库配置"
+      },
+      {
+        key: "WECHATPAY_PUBLIC_KEY_ID",
+        label: "微信支付公钥 ID",
+        description:
+          "微信支付公钥模式下的公钥 ID，用于校验 API 应答和回调头中的 Wechatpay-Serial。",
+        secret: false,
+        inputType: "TEXT",
+        visibleInWechatPayVerifyModes: ["PUBLIC_KEY"]
+      },
+      {
+        key: "WECHATPAY_PUBLIC_KEY",
+        label: "微信支付公钥",
+        description:
+          "用于验签微信支付 API 应答和回调，支持直接粘贴 PEM 内容，或填写服务器可访问的公钥文件路径。",
+        secret: false,
+        inputType: "TEXTAREA",
+        visibleInWechatPayVerifyModes: ["PUBLIC_KEY"]
+      },
+      {
+        key: "WECHATPAY_PLATFORM_CERT_SERIAL_NO",
+        label: "平台证书序列号",
+        description:
+          "平台证书模式下使用；应与当前下载的微信支付平台证书一致，用于校验 API 应答和回调头中的 Wechatpay-Serial。",
+        secret: false,
+        inputType: "TEXT",
+        visibleInWechatPayVerifyModes: ["CERT"]
+      },
+      {
+        key: "WECHATPAY_PLATFORM_CERT",
+        label: "微信支付平台证书",
+        description:
+          "平台证书模式下使用；支持直接粘贴 PEM/CRT 内容，或填写服务器可访问的证书文件路径。",
+        secret: false,
+        inputType: "TEXTAREA",
+        visibleInWechatPayVerifyModes: ["CERT"]
       }
     ]
   },

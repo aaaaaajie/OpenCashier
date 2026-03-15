@@ -3,8 +3,11 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "predev": "pnpm --filter @payment-platform/wechatpay-sdk build",
     "dev": "nest start --watch",
+    "prebuild": "pnpm --filter @payment-platform/wechatpay-sdk build",
     "build": "nest build",
+    "pretypecheck": "pnpm --filter @payment-platform/wechatpay-sdk build",
     "start": "node dist/main.js",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "prisma:generate": "prisma generate --schema prisma/schema.prisma",
@@ -12,6 +15,7 @@
     "prisma:studio": "prisma studio --schema prisma/schema.prisma"
   },
   "dependencies": {
+    "@payment-platform/wechatpay-sdk": "workspace:*",
     "alipay-sdk": "^4.3.0",
     "@nestjs/common": "^11.1.6",
     "@nestjs/config": "^4.0.2",

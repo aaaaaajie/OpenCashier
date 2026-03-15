@@ -8,4 +8,5 @@ export interface RequestWithContext extends Request {
   idempotencyFingerprint?: string;
   timestamp?: string;
   nonce?: string;
+  rawBody?: Buffer;
 }

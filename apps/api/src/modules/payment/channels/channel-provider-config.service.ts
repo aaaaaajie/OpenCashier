@@ -6,6 +6,7 @@ import { PlatformConfigService } from "../platform-config.service";
 
 export type AlipayAuthMode = "KEY" | "CERT";
 export type AlipayProductCapability = "QR" | "PAGE" | "WAP";
+export type WechatPayVerifyMode = "PUBLIC_KEY" | "CERT";
 
 interface AlipayProviderConfigBase {
   authMode: AlipayAuthMode;
@@ -37,12 +38,30 @@ interface PaypalProviderConfig {
   clientSecret?: string;
 }
 
-interface WechatPayProviderConfig {
+interface WechatPayProviderConfigBase {
+  verifyMode: WechatPayVerifyMode;
   appId?: string;
   mchId?: string;
+  mchSerialNo?: string;
   apiV3Key?: string;
   privateKey?: string;
 }
+
+interface WechatPayPublicKeyProviderConfig extends WechatPayProviderConfigBase {
+  verifyMode: "PUBLIC_KEY";
+  publicKeyId?: string;
+  publicKey?: string;
+}
+
+interface WechatPayCertProviderConfig extends WechatPayProviderConfigBase {
+  verifyMode: "CERT";
+  platformCertSerialNo?: string;
+  platformCert?: string;
+}
+
+type WechatPayProviderConfig =
+  | WechatPayPublicKeyProviderConfig
+  | WechatPayCertProviderConfig;
 
 const DEFAULT_ALIPAY_PRODUCT_CAPABILITIES: AlipayProductCapability[] = [
   "QR",
@@ -209,20 +228,129 @@ export class ChannelProviderConfigService {
 
   hasWechatPayConfig(): boolean {
     const config = this.getWechatPayConfig();
-    return Boolean(
-      config.appId &&
-        config.mchId &&
-        config.apiV3Key &&
-        config.privateKey
-    );
+    if (
+      !config.appId ||
+      !config.mchId ||
+      !config.mchSerialNo ||
+      !config.apiV3Key ||
+      !config.privateKey
+    ) {
+      return false;
+    }
+
+    if (config.verifyMode === "CERT") {
+      return Boolean(config.platformCertSerialNo && config.platformCert);
+    }
+
+    return Boolean(config.publicKeyId && config.publicKey);
   }
 
   getWechatPayConfig(): WechatPayProviderConfig {
+    const verifyMode = this.resolveWechatPayVerifyMode();
+
+    if (verifyMode === "CERT") {
+      return {
+        verifyMode,
+        appId: this.resolveTextConfig("WECHATPAY_APP_ID"),
+        mchId: this.resolveTextConfig("WECHATPAY_MCH_ID"),
+        mchSerialNo: this.resolveTextConfig("WECHATPAY_MCH_SERIAL_NO"),
+        apiV3Key: this.resolveTextConfig("WECHATPAY_API_V3_KEY"),
+        privateKey: this.resolveMaterialConfig("WECHATPAY_PRIVATE_KEY"),
+        platformCertSerialNo: this.resolveTextConfig(
+          "WECHATPAY_PLATFORM_CERT_SERIAL_NO"
+        ),
+        platformCert: this.resolveMaterialConfig("WECHATPAY_PLATFORM_CERT")
+      };
+    }
+
     return {
+      verifyMode,
       appId: this.resolveTextConfig("WECHATPAY_APP_ID"),
       mchId: this.resolveTextConfig("WECHATPAY_MCH_ID"),
+      mchSerialNo: this.resolveTextConfig("WECHATPAY_MCH_SERIAL_NO"),
       apiV3Key: this.resolveTextConfig("WECHATPAY_API_V3_KEY"),
-      privateKey: this.resolveMaterialConfig("WECHATPAY_PRIVATE_KEY")
+      privateKey: this.resolveMaterialConfig("WECHATPAY_PRIVATE_KEY"),
+      publicKeyId: this.resolveTextConfig("WECHATPAY_PUBLIC_KEY_ID"),
+      publicKey: this.resolveMaterialConfig("WECHATPAY_PUBLIC_KEY")
+    };
+  }
+
+  getWechatPayClientConfig():
+    | {
+        verifyMode: "PUBLIC_KEY";
+        appId: string;
+        mchId: string;
+        mchSerialNo: string;
+        apiV3Key: string;
+        privateKey: string;
+        publicKeyId: string;
+        publicKey: string;
+      }
+    | {
+        verifyMode: "CERT";
+        appId: string;
+        mchId: string;
+        mchSerialNo: string;
+        apiV3Key: string;
+        privateKey: string;
+        platformCertSerialNo: string;
+        platformCert: string;
+      } {
+    const config = this.getWechatPayConfig();
+    const missingKeys = [
+      !config.appId ? "WECHATPAY_APP_ID" : undefined,
+      !config.mchId ? "WECHATPAY_MCH_ID" : undefined,
+      !config.mchSerialNo ? "WECHATPAY_MCH_SERIAL_NO" : undefined,
+      !config.apiV3Key ? "WECHATPAY_API_V3_KEY" : undefined,
+      !config.privateKey ? "WECHATPAY_PRIVATE_KEY" : undefined
+    ];
+
+    if (config.verifyMode === "CERT") {
+      missingKeys.push(
+        !config.platformCertSerialNo
+          ? "WECHATPAY_PLATFORM_CERT_SERIAL_NO"
+          : undefined,
+        !config.platformCert ? "WECHATPAY_PLATFORM_CERT" : undefined
+      );
+    } else {
+      missingKeys.push(
+        !config.publicKeyId ? "WECHATPAY_PUBLIC_KEY_ID" : undefined,
+        !config.publicKey ? "WECHATPAY_PUBLIC_KEY" : undefined
+      );
+    }
+
+    const requiredKeys = missingKeys.filter(
+      (item): item is string => Boolean(item)
+    );
+
+    if (requiredKeys.length > 0) {
+      throw new BadRequestException(
+        `missing wechatpay configuration: ${requiredKeys.join(", ")}`
+      );
+    }
+
+    if (config.verifyMode === "CERT") {
+      return {
+        verifyMode: "CERT",
+        appId: config.appId!,
+        mchId: config.mchId!,
+        mchSerialNo: config.mchSerialNo!,
+        apiV3Key: config.apiV3Key!,
+        privateKey: config.privateKey!,
+        platformCertSerialNo: config.platformCertSerialNo!,
+        platformCert: config.platformCert!
+      };
+    }
+
+    return {
+      verifyMode: "PUBLIC_KEY",
+      appId: config.appId!,
+      mchId: config.mchId!,
+      mchSerialNo: config.mchSerialNo!,
+      apiV3Key: config.apiV3Key!,
+      privateKey: config.privateKey!,
+      publicKeyId: config.publicKeyId!,
+      publicKey: config.publicKey!
     };
   }
 
@@ -248,6 +376,28 @@ export class ChannelProviderConfigService {
     return "KEY";
   }
 
+  private resolveWechatPayVerifyMode(): WechatPayVerifyMode {
+    const configuredMode = this.resolveTextConfig("WECHATPAY_VERIFY_MODE")
+      ?.toUpperCase();
+
+    if (configuredMode === "CERT") {
+      return "CERT";
+    }
+
+    if (configuredMode === "PUBLIC_KEY") {
+      return "PUBLIC_KEY";
+    }
+
+    if (
+      this.resolveTextConfig("WECHATPAY_PLATFORM_CERT_SERIAL_NO") ||
+      this.resolveTextConfig("WECHATPAY_PLATFORM_CERT")
+    ) {
+      return "CERT";
+    }
+
+    return "PUBLIC_KEY";
+  }
+
   private resolveMaterialConfig(
     key:
       | "ALIPAY_PRIVATE_KEY"
@@ -256,6 +406,8 @@ export class ChannelProviderConfigService {
       | "ALIPAY_PUBLIC_CERT"
       | "ALIPAY_ROOT_CERT"
       | "WECHATPAY_PRIVATE_KEY"
+      | "WECHATPAY_PUBLIC_KEY"
+      | "WECHATPAY_PLATFORM_CERT"
   ): string | undefined {
     const rawValue = this.platformConfigService.get(key);
 

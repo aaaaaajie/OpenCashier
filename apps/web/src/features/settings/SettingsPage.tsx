@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   CheckCircleFilled,
   ExclamationCircleFilled,
-  InfoCircleOutlined,
+  QuestionCircleOutlined,
   SafetyCertificateOutlined,
 } from "@ant-design/icons";
 import {
@@ -36,6 +36,8 @@ type ProviderCatalogItem = {
 
 type AlipayAuthMode = "KEY" | "CERT";
 type AlipayProductCapability = "QR" | "PAGE" | "WAP";
+type WechatPayVerifyMode = "PUBLIC_KEY" | "CERT";
+type ProviderConfigMode = AlipayAuthMode | WechatPayVerifyMode;
 
 type PlatformConfigInputType =
   | "TEXT"
@@ -49,6 +51,11 @@ type PlatformConfigOption = {
   value: string;
 };
 
+type PlatformConfigDocLink = {
+  label: string;
+  href: string;
+};
+
 type PlatformConfigItemDefinition = {
   key: string;
   label: string;
@@ -57,7 +64,9 @@ type PlatformConfigItemDefinition = {
   inputType: PlatformConfigInputType;
   placeholder?: string;
   options?: PlatformConfigOption[];
+  docLinks?: PlatformConfigDocLink[];
   visibleInAlipayAuthModes?: AlipayAuthMode[];
+  visibleInWechatPayVerifyModes?: WechatPayVerifyMode[];
 };
 
 type PlatformConfigGroupDefinition = {
@@ -95,7 +104,7 @@ type ProviderConfigRow = {
   statusColor: string;
   appIdValue?: string;
   notifyUrl?: string;
-  authModeValue?: AlipayAuthMode;
+  authModeValue?: ProviderConfigMode;
   authModeLabel?: string;
   gatewayModeLabel?: string;
   editableItems: ProviderConfigItem[];
@@ -139,6 +148,7 @@ const PROVIDER_GROUP_APP_ID_KEY = {
 
 const PROVIDER_GROUP_NOTIFY_PATH = {
   alipay: "/api/v1/notify/alipay",
+  wechatpay: "/api/v1/notify/wechatpay",
 } as const satisfies Partial<
   Record<keyof typeof PROVIDER_GROUP_TO_CODE, string>
 >;
@@ -180,7 +190,19 @@ const ALIPAY_PRODUCT_CAPABILITY_OPTIONS = [
   },
 ] satisfies PlatformConfigOption[];
 
+const WECHATPAY_VERIFY_MODE_OPTIONS = [
+  {
+    label: "微信支付公钥模式",
+    value: "PUBLIC_KEY",
+  },
+  {
+    label: "平台证书模式",
+    value: "CERT",
+  },
+] satisfies PlatformConfigOption[];
+
 const DEFAULT_ALIPAY_AUTH_MODE: AlipayAuthMode = "KEY";
+const DEFAULT_WECHATPAY_VERIFY_MODE: WechatPayVerifyMode = "PUBLIC_KEY";
 const DEFAULT_ALIPAY_PRODUCT_CAPABILITIES: AlipayProductCapability[] = [
   "QR",
   "PAGE",
@@ -276,37 +298,161 @@ const PROVIDER_CONFIG_GROUPS: PlatformConfigGroupDefinition[] = [
   {
     key: "wechatpay",
     label: "微信支付配置",
-    description: "微信支付当前为 API 直连占位，配置齐全后会自动切换为已配置状态。",
+    description:
+      "支持微信支付公钥模式和平台证书模式；私钥、公钥、证书支持直接粘贴内容或填写服务器本地文件路径。",
     items: [
+      {
+        key: "WECHATPAY_VERIFY_MODE",
+        label: "验签方式",
+        description: "",
+        secret: false,
+        inputType: "SELECT",
+        options: WECHATPAY_VERIFY_MODE_OPTIONS,
+        docLinks: [
+          {
+            label: "微信支付公钥验签",
+            href: "https://pay.wechatpay.cn/doc/v3/merchant/4013053249",
+          },
+          {
+            label: "平台证书验签",
+            href: "https://pay.wechatpay.cn/doc/v3/merchant/4013053420",
+          },
+          {
+            label: "公钥切换证书说明",
+            href: "https://pay.wechatpay.cn/doc/v3/partner/4015419376",
+          },
+        ],
+      },
       {
         key: "WECHATPAY_APP_ID",
         label: "应用 ID",
-        description: "微信开放平台或服务商应用 ID。",
+        description: "与当前商户号绑定的 AppID。",
         secret: false,
         inputType: "TEXT",
+        docLinks: [
+          {
+            label: "开发必要参数说明",
+            href: "https://pay.wechatpay.cn/doc/v3/merchant/4013070756",
+          },
+        ],
       },
       {
         key: "WECHATPAY_MCH_ID",
         label: "商户号",
-        description: "微信支付分配的商户号。",
+        description: "微信支付分配的商户身份标识。",
         secret: false,
         inputType: "TEXT",
+        docLinks: [
+          {
+            label: "开发必要参数说明",
+            href: "https://pay.wechatpay.cn/doc/v3/merchant/4013070756",
+          },
+        ],
       },
       {
         key: "WECHATPAY_API_V3_KEY",
         label: "API v3 密钥",
-        description: "微信支付 API v3 证书解密和签名相关密钥。",
+        description: "32 位对称密钥，用于解密回调；",
         secret: true,
         inputType: "PASSWORD",
         placeholder: "已配置时不会回显，重新输入会覆盖当前数据库配置",
+        docLinks: [
+          {
+            label: "开发必要参数说明",
+            href: "https://pay.wechatpay.cn/doc/v3/merchant/4013070756",
+          },
+        ],
+      },
+      {
+        key: "WECHATPAY_MCH_SERIAL_NO",
+        label: "商户 API 证书序列号",
+        description: "商户证书序列号",
+        secret: false,
+        inputType: "TEXT",
+        docLinks: [
+          {
+            label: "开发必要参数说明",
+            href: "https://pay.wechatpay.cn/doc/v3/merchant/4013070756",
+          },
+          {
+            label: "平台证书验签",
+            href: "https://pay.wechatpay.cn/doc/v3/merchant/4013053420",
+          },
+        ],
       },
       {
         key: "WECHATPAY_PRIVATE_KEY",
-        label: "商户私钥",
-        description: "支持直接粘贴 PEM 内容，或填写服务器可访问的密钥文件路径。",
+        label: "商户 API 证书私钥",
+        description: "商户证书对应的私钥内容，通常是 apiclient_key.pem。",
         secret: true,
         inputType: "TEXTAREA",
         placeholder: "已配置时不会回显，重新输入会覆盖当前数据库配置",
+        docLinks: [
+          {
+            label: "平台证书验签",
+            href: "https://pay.wechatpay.cn/doc/v3/merchant/4013053420",
+          },
+          {
+            label: "开发必要参数说明",
+            href: "https://pay.wechatpay.cn/doc/v3/merchant/4013070756",
+          },
+        ],
+      },
+      {
+        key: "WECHATPAY_PUBLIC_KEY_ID",
+        label: "微信支付公钥 ID",
+        description: "公钥模式下用于匹配微信支付公钥。",
+        secret: false,
+        inputType: "TEXT",
+        visibleInWechatPayVerifyModes: ["PUBLIC_KEY"],
+        docLinks: [
+          {
+            label: "微信支付公钥验签",
+            href: "https://pay.wechatpay.cn/doc/v3/merchant/4013053249",
+          },
+        ],
+      },
+      {
+        key: "WECHATPAY_PUBLIC_KEY",
+        label: "微信支付公钥",
+        description: "公钥模式下用于验证微信应答和回调签名。",
+        secret: false,
+        inputType: "TEXTAREA",
+        visibleInWechatPayVerifyModes: ["PUBLIC_KEY"],
+        docLinks: [
+          {
+            label: "微信支付公钥验签",
+            href: "https://pay.wechatpay.cn/doc/v3/merchant/4013053249",
+          },
+        ],
+      },
+      {
+        key: "WECHATPAY_PLATFORM_CERT_SERIAL_NO",
+        label: "平台证书序列号",
+        description: "",
+        secret: false,
+        inputType: "TEXT",
+        visibleInWechatPayVerifyModes: ["CERT"],
+        docLinks: [
+          {
+            label: "平台证书验签",
+            href: "https://pay.wechatpay.cn/doc/v3/merchant/4013053420",
+          },
+        ],
+      },
+      {
+        key: "WECHATPAY_PLATFORM_CERT",
+        label: "微信支付平台证书",
+        description: "平台证书模式下用于验证微信应答和回调签名。",
+        secret: false,
+        inputType: "TEXTAREA",
+        visibleInWechatPayVerifyModes: ["CERT"],
+        docLinks: [
+          {
+            label: "平台证书验签",
+            href: "https://pay.wechatpay.cn/doc/v3/merchant/4013053420",
+          },
+        ],
       },
     ],
   },
@@ -368,6 +514,10 @@ export function SettingsPage() {
     import.meta.env.VITE_API_BASE_URL ?? "http://localhost:3000/api/v1";
   const selectedProviderGroupKey = Form.useWatch("providerGroupKey", modalForm);
   const selectedAlipayAuthMode = Form.useWatch("ALIPAY_AUTH_MODE", modalForm);
+  const selectedWechatPayVerifyMode = Form.useWatch(
+    "WECHATPAY_VERIFY_MODE",
+    modalForm,
+  );
   const activeProviderGroupKey = selectedProviderGroupKey ?? editingGroupKey;
 
   const platformBaseUrl = useMemo(
@@ -437,6 +587,19 @@ export function SettingsPage() {
     );
   }, [activeProviderGroupKey, providerRows, selectedAlipayAuthMode]);
 
+  const activeWechatPayVerifyMode = useMemo(() => {
+    if (activeProviderGroupKey !== "wechatpay") {
+      return undefined;
+    }
+
+    const persistedMode = providerRows.find((row) => row.groupKey === "wechatpay")
+      ?.authModeValue;
+
+    return normalizeWechatPayVerifyMode(
+      toSingleFieldValue(selectedWechatPayVerifyMode) ?? persistedMode,
+    );
+  }, [activeProviderGroupKey, providerRows, selectedWechatPayVerifyMode]);
+
   useEffect(() => {
     void loadSettings();
   }, []);
@@ -488,6 +651,10 @@ export function SettingsPage() {
             ALIPAY_PRODUCT_CAPABILITIES: DEFAULT_ALIPAY_PRODUCT_CAPABILITIES,
             ALIPAY_GATEWAY: DEFAULT_ALIPAY_GATEWAY,
           }
+        : defaultGroupKey === "wechatpay"
+          ? {
+              WECHATPAY_VERIFY_MODE: DEFAULT_WECHATPAY_VERIFY_MODE,
+            }
         : {}),
     });
     setModalOpen(true);
@@ -514,6 +681,11 @@ export function SettingsPage() {
                 ?.value ??
               DEFAULT_ALIPAY_GATEWAY,
           }
+        : row.groupKey === "wechatpay"
+          ? {
+              WECHATPAY_VERIFY_MODE:
+                row.authModeValue ?? DEFAULT_WECHATPAY_VERIFY_MODE,
+            }
         : {}),
       ...Object.fromEntries(
         row.editableItems
@@ -548,6 +720,17 @@ export function SettingsPage() {
 
       if (!modalForm.getFieldValue("ALIPAY_GATEWAY")) {
         modalForm.setFieldValue("ALIPAY_GATEWAY", DEFAULT_ALIPAY_GATEWAY);
+      }
+
+      return;
+    }
+
+    if (groupKey === "wechatpay") {
+      if (!modalForm.getFieldValue("WECHATPAY_VERIFY_MODE")) {
+        modalForm.setFieldValue(
+          "WECHATPAY_VERIFY_MODE",
+          DEFAULT_WECHATPAY_VERIFY_MODE,
+        );
       }
     }
   }
@@ -949,7 +1132,7 @@ export function SettingsPage() {
       </Spin>
 
       <Modal
-        title={editingGroupKey ? "编辑支付平台配置草稿" : "新增支付平台配置草稿"}
+        title={editingGroupKey ? "编辑" : "新增"}
         open={modalOpen}
         destroyOnHidden
         onCancel={closeModal}
@@ -1024,13 +1207,15 @@ export function SettingsPage() {
           </Form.Item>
 
           {activeProviderGroup ? (
-            <Row gutter={[16, 0]}>
+            <>
+              <Row gutter={[16, 0]}>
               {activeProviderGroup.items
                 .filter((item) =>
                   isConfigItemVisible(
                     activeProviderGroup.key,
                     item,
                     activeAlipayAuthMode,
+                    activeWechatPayVerifyMode,
                   ),
                 )
                 .map((item) => {
@@ -1061,12 +1246,22 @@ export function SettingsPage() {
                               placement="topLeft"
                               title={
                                 <Space direction="vertical" size={2}>
-                                  <span>{item.description}</span>
-                                  <Typography.Text
-                                    style={{ color: "rgba(255,255,255,0.72)" }}
-                                  >
-                                    {item.key}
-                                  </Typography.Text>
+                                  {item.description ? <span>{item.description}</span> : null}
+                                  {item.docLinks?.length ? (
+                                    <Space wrap size={[8, 4]}>
+                                      <span>更多:</span>
+                                      {item.docLinks.map((doc) => (
+                                        <Typography.Link
+                                          key={doc.href}
+                                          href={doc.href}
+                                          target="_blank"
+                                          rel="noreferrer"
+                                        >
+                                          {doc.label}
+                                        </Typography.Link>
+                                      ))}
+                                    </Space>
+                                  ) : null}
                                   {item.secret && activeItem.configured ? (
                                     <span>
                                       已配置时不会回显，留空表示保持不变。
@@ -1082,7 +1277,7 @@ export function SettingsPage() {
                                 type="secondary"
                                 style={{ cursor: "help" }}
                               >
-                                <InfoCircleOutlined />
+                                <QuestionCircleOutlined />
                               </Typography.Text>
                             </Tooltip>
                           </Space>
@@ -1093,7 +1288,8 @@ export function SettingsPage() {
                     </Col>
                   );
               })}
-            </Row>
+              </Row>
+            </>
           ) : null}
 
           {modalValidationResult ? (
@@ -1162,6 +1358,11 @@ function buildConfigPatch(
   const alipayAuthMode = normalizeAlipayAuthMode(
     group.key === "alipay" ? toSingleFieldValue(values.ALIPAY_AUTH_MODE) : undefined,
   );
+  const wechatPayVerifyMode = normalizeWechatPayVerifyMode(
+    group.key === "wechatpay"
+      ? toSingleFieldValue(values.WECHATPAY_VERIFY_MODE)
+      : undefined,
+  );
 
   group.items.forEach((item) => {
     const currentItem =
@@ -1170,7 +1371,12 @@ function buildConfigPatch(
         ...item,
         configured: false,
       } satisfies ProviderConfigItem);
-    const visible = isConfigItemVisible(group.key, item, alipayAuthMode);
+    const visible = isConfigItemVisible(
+      group.key,
+      item,
+      alipayAuthMode,
+      wechatPayVerifyMode,
+    );
 
     if (!visible) {
       if (currentItem.configured) {
@@ -1300,18 +1506,34 @@ function normalizeAlipayAuthMode(
   return value?.trim().toUpperCase() === "CERT" ? "CERT" : "KEY";
 }
 
+function normalizeWechatPayVerifyMode(
+  value?: string | null,
+): WechatPayVerifyMode {
+  return value?.trim().toUpperCase() === "CERT" ? "CERT" : "PUBLIC_KEY";
+}
+
 function isConfigItemVisible(
   groupKey: string,
-  item: Pick<PlatformConfigItemDefinition, "visibleInAlipayAuthModes">,
+  item: Pick<
+    PlatformConfigItemDefinition,
+    "visibleInAlipayAuthModes" | "visibleInWechatPayVerifyModes"
+  >,
   alipayAuthMode?: AlipayAuthMode,
+  wechatPayVerifyMode?: WechatPayVerifyMode,
 ): boolean {
-  if (groupKey !== "alipay" || !item.visibleInAlipayAuthModes?.length) {
-    return true;
+  if (groupKey === "alipay" && item.visibleInAlipayAuthModes?.length) {
+    return item.visibleInAlipayAuthModes.includes(
+      alipayAuthMode ?? DEFAULT_ALIPAY_AUTH_MODE,
+    );
   }
 
-  return item.visibleInAlipayAuthModes.includes(
-    alipayAuthMode ?? DEFAULT_ALIPAY_AUTH_MODE,
-  );
+  if (groupKey === "wechatpay" && item.visibleInWechatPayVerifyModes?.length) {
+    return item.visibleInWechatPayVerifyModes.includes(
+      wechatPayVerifyMode ?? DEFAULT_WECHATPAY_VERIFY_MODE,
+    );
+  }
+
+  return true;
 }
 
 function resolvePlatformBaseUrl(
@@ -1368,7 +1590,22 @@ function resolveGroupNotifyUrl(
 function resolveGroupAuthMode(
   groupKey: string,
   value?: Record<string, string | null>,
-): AlipayAuthMode | undefined {
+): ProviderConfigMode | undefined {
+  if (groupKey === "wechatpay") {
+    if (value?.WECHATPAY_VERIFY_MODE?.trim()) {
+      return normalizeWechatPayVerifyMode(value.WECHATPAY_VERIFY_MODE);
+    }
+
+    if (
+      value?.WECHATPAY_PLATFORM_CERT_SERIAL_NO ||
+      value?.WECHATPAY_PLATFORM_CERT
+    ) {
+      return "CERT";
+    }
+
+    return "PUBLIC_KEY";
+  }
+
   if (groupKey !== "alipay") {
     return undefined;
   }
@@ -1396,6 +1633,13 @@ function resolveGroupAuthModeLabel(
 
   if (!authMode) {
     return undefined;
+  }
+
+  if (groupKey === "wechatpay") {
+    return (
+      WECHATPAY_VERIFY_MODE_OPTIONS.find((option) => option.value === authMode)
+        ?.label ?? authMode
+    );
   }
 
   return (

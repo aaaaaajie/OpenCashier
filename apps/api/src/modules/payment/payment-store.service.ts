@@ -1247,7 +1247,10 @@ export class PaymentStoreService implements OnModuleInit {
       expireTime: expireTime.toISOString()
     });
 
-    return `${this.platformConfigService.get("WEB_BASE_URL") ?? "http://localhost:5173"}/cashier/${cashierToken}`;
+    const appBaseUrl =
+      this.platformConfigService.get("APP_BASE_URL") ?? "http://localhost:3000";
+
+    return `${appBaseUrl.replace(/\/$/, "")}/api/cashier/${cashierToken}`;
   }
 
   private toApiSignType(signType: PrismaSignType): string {

@@ -44,7 +44,7 @@ export const PLATFORM_CONFIG_GROUPS: PlatformConfigGroupDefinition[] = [
       {
         key: "APP_BASE_URL",
         label: "平台 API 地址",
-        description: "用于拼接默认的支付渠道异步通知回调地址。",
+        description: "用于拼接默认的支付渠道异步通知回调地址，以及商户侧实际使用的 cashierUrl 入口。",
         secret: false,
         inputType: "TEXT",
         placeholder: "例如 http://localhost:3000"
@@ -52,7 +52,7 @@ export const PLATFORM_CONFIG_GROUPS: PlatformConfigGroupDefinition[] = [
       {
         key: "WEB_BASE_URL",
         label: "后台/收银台地址",
-        description: "用于生成商户侧返回的 cashier URL。",
+        description: "用于生成扫码页、多支付品牌选择页等前端收银台页面地址。",
         secret: false,
         inputType: "TEXT",
         placeholder: "例如 http://localhost:5173"

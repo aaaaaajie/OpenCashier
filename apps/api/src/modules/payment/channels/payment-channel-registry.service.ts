@@ -37,9 +37,19 @@ export class PaymentChannelRegistryService {
   }
 
   listCatalogByChannels(channels: string[]) {
+    const seenProviders = new Set<PaymentProviderCode>();
+
     return channels
       .map((channel) => this.findByChannel(channel)?.getCatalog())
-      .filter((item): item is NonNullable<typeof item> => Boolean(item));
+      .filter((item): item is NonNullable<typeof item> => Boolean(item))
+      .filter((item) => {
+        if (seenProviders.has(item.providerCode)) {
+          return false;
+        }
+
+        seenProviders.add(item.providerCode);
+        return true;
+      });
   }
 
   validateChannels(channels: string[]): void {

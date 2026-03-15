@@ -105,6 +105,10 @@ body {
   align-items: stretch;
 }
 
+.cashier-content-single {
+  grid-template-columns: 1fr;
+}
+
 .cashier-column {
   display: flex;
   flex-direction: column;
@@ -159,6 +163,24 @@ body {
 .cashier-method-icon {
   font-size: 28px;
   color: #1677ff;
+}
+
+.cashier-method-badge {
+  width: 36px;
+  height: 36px;
+  border-radius: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background:
+    linear-gradient(135deg, rgba(22, 119, 255, 0.16), rgba(22, 119, 255, 0.04));
+  color: #1677ff;
+}
+
+.cashier-method-badge-generic {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
 }
 
 .cashier-method-title,

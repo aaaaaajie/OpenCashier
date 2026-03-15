@@ -11,12 +11,30 @@ import { PaymentStoreService } from "../payment/payment-store.service";
 import { PlatformConfigService } from "../payment/platform-config.service";
 
 type CashierTerminal = "desktop" | "mobile";
+type HostedCashierEntry =
+  | {
+      action: "REDIRECT";
+      url: string;
+    }
+  | {
+      action: "WEB";
+      url: string;
+    };
 
 const ALIPAY_CASHIER_CHANNELS = [
   "alipay_qr",
   "alipay_page",
   "alipay_wap"
 ] as const;
+
+const ALIPAY_CHANNEL_CAPABILITY_MAP: Record<
+  (typeof ALIPAY_CASHIER_CHANNELS)[number],
+  AlipayProductCapability
+> = {
+  alipay_qr: "QR",
+  alipay_page: "PAGE",
+  alipay_wap: "WAP"
+};
 
 @Injectable()
 export class CashierService {
@@ -65,6 +83,36 @@ export class CashierService {
     };
   }
 
+  async resolveHostedCashierEntry(
+    cashierToken: string,
+    terminalValue?: string
+  ): Promise<HostedCashierEntry> {
+    const terminal = this.normalizeTerminal(terminalValue);
+    const session = await this.getCashierSession(cashierToken, terminal);
+    const providerCount = this.countDistinctProviders(session.channels);
+    const preferredChannel = this.selectHostedPreferredChannel(
+      session.channels,
+      terminal
+    );
+
+    if (
+      providerCount === 1 &&
+      preferredChannel?.sessionStatus === "READY" &&
+      preferredChannel.actionType === "REDIRECT_URL" &&
+      preferredChannel.payUrl
+    ) {
+      return {
+        action: "REDIRECT",
+        url: preferredChannel.payUrl
+      };
+    }
+
+    return {
+      action: "WEB",
+      url: this.buildCashierWebUrl(cashierToken)
+    };
+  }
+
   private resolveProviderNotifyUrl(
     channel: string,
     fallbackNotifyUrl: string
@@ -97,7 +145,12 @@ export class CashierService {
 
     if (this.hasRequestedAlipay(order.allowedChannels)) {
       channels.push(
-        await this.buildPreferredAlipaySession(order, latestAttempts, terminal)
+        await this.buildPreferredAlipaySession(
+          order,
+          order.allowedChannels,
+          latestAttempts,
+          terminal
+        )
       );
     }
 
@@ -117,11 +170,15 @@ export class CashierService {
     fallbackReason: string
   ) {
     const channels = [];
+    const requestedAlipayChannels = this.resolveRequestedAlipayChannels(
+      allowedChannels,
+      terminal
+    );
 
     if (this.hasRequestedAlipay(allowedChannels)) {
       const latestAlipayAttempt = this.findLatestAttemptForChannels(
         latestAttempts,
-        ALIPAY_CASHIER_CHANNELS
+        requestedAlipayChannels
       );
 
       if (latestAlipayAttempt) {
@@ -129,7 +186,12 @@ export class CashierService {
       } else {
         channels.push(
           this.paymentChannelRegistryService.createFailedSession(
-            { channel: this.resolveAlipayCandidateChannels(terminal)[0] ?? "alipay_qr" },
+            {
+              channel:
+                requestedAlipayChannels[0] ??
+                this.resolveAlipayPreferredOrder(terminal)[0] ??
+                "alipay_qr"
+            },
             fallbackReason
           )
         );
@@ -157,10 +219,29 @@ export class CashierService {
 
   private async buildPreferredAlipaySession(
     order: Awaited<ReturnType<PaymentStoreService["getOrderByPlatformOrderNo"]>>,
+    allowedChannels: string[],
     latestAttempts: PayAttempt[],
     terminal: CashierTerminal
   ) {
-    const candidateChannels = this.resolveAlipayCandidateChannels(terminal);
+    const requestedChannels = this.resolveRequestedAlipayChannels(
+      allowedChannels,
+      terminal
+    );
+    const candidateChannels = this.resolveAlipayCandidateChannels(
+      allowedChannels,
+      terminal
+    );
+    const fallbackChannel =
+      requestedChannels[0] ??
+      this.resolveAlipayPreferredOrder(terminal)[0] ??
+      "alipay_qr";
+
+    if (candidateChannels.length === 0) {
+      return this.paymentChannelRegistryService.createFailedSession(
+        { channel: fallbackChannel },
+        this.buildAlipayCapabilityMismatchReason(requestedChannels)
+      );
+    }
 
     for (const channel of candidateChannels) {
       const reusableAttempt = this.findReusableAttempt(latestAttempts, channel);
@@ -189,7 +270,7 @@ export class CashierService {
     return (
       latestFailure ??
       this.paymentChannelRegistryService.createUnavailableSession({
-        channel: candidateChannels[0] ?? "alipay_qr"
+        channel: fallbackChannel
       })
     );
   }
@@ -315,26 +396,140 @@ export class CashierService {
     )[0];
   }
 
-  private resolveAlipayCandidateChannels(terminal: CashierTerminal) {
-    const capabilities = this.channelProviderConfigService.getAlipayProductCapabilities();
-    const preferredCapabilities: readonly AlipayProductCapability[] =
-      terminal === "mobile"
-        ? ["WAP", "PAGE", "QR"]
-        : ["QR", "PAGE", "WAP"];
+  private resolveAlipayCandidateChannels(
+    allowedChannels: string[],
+    terminal: CashierTerminal
+  ) {
+    const requestedChannels = new Set(
+      this.resolveRequestedAlipayChannels(allowedChannels, terminal)
+    );
+    const configuredCapabilities = new Set(
+      this.channelProviderConfigService.getAlipayProductCapabilities()
+    );
 
-    return preferredCapabilities
-      .filter((capability) => capabilities.includes(capability))
-      .map((capability) => {
-        if (capability === "PAGE") {
-          return "alipay_page";
-        }
+    return this.resolveAlipayPreferredOrder(terminal).filter(
+      (channel) =>
+        requestedChannels.has(channel) &&
+        configuredCapabilities.has(ALIPAY_CHANNEL_CAPABILITY_MAP[channel])
+    );
+  }
 
-        return capability === "WAP" ? "alipay_wap" : "alipay_qr";
-      });
+  private resolveRequestedAlipayChannels(
+    allowedChannels: string[],
+    terminal: CashierTerminal
+  ) {
+    const requestedChannels = new Set(
+      allowedChannels.filter((channel) => this.isAlipayChannel(channel)) as Array<
+        (typeof ALIPAY_CASHIER_CHANNELS)[number]
+      >
+    );
+
+    return this.resolveAlipayPreferredOrder(terminal).filter((channel) =>
+      requestedChannels.has(channel)
+    );
+  }
+
+  private resolveAlipayPreferredOrder(terminal: CashierTerminal) {
+    return terminal === "mobile"
+      ? (["alipay_wap", "alipay_page", "alipay_qr"] as const)
+      : (["alipay_qr", "alipay_page", "alipay_wap"] as const);
+  }
+
+  private buildAlipayCapabilityMismatchReason(
+    requestedChannels: readonly string[]
+  ): string {
+    const configuredCapabilities =
+      this.channelProviderConfigService.getAlipayProductCapabilities();
+
+    return `支付宝未开通与本单匹配的产品能力，请检查 allowedChannels=${requestedChannels.join(
+      ", "
+    )} 与 ALIPAY_PRODUCT_CAPABILITIES=${configuredCapabilities.join(", ")}。`;
   }
 
   private normalizeTerminal(value?: string): CashierTerminal {
     return value?.toLowerCase() === "mobile" ? "mobile" : "desktop";
+  }
+
+  private buildCashierWebUrl(cashierToken: string): string {
+    const webBaseUrl =
+      this.platformConfigService.get("WEB_BASE_URL") ?? "http://localhost:5173";
+
+    return `${webBaseUrl.replace(/\/$/, "")}/cashier/${cashierToken}`;
+  }
+
+  private countDistinctProviders(
+    channels: Array<{ providerCode?: string; channel: string }>
+  ): number {
+    return new Set(channels.map((channel) => channel.providerCode ?? channel.channel))
+      .size;
+  }
+
+  private selectHostedPreferredChannel(
+    channels: Array<{
+      providerCode?: string;
+      channel: string;
+      sessionStatus: string;
+      actionType: string;
+      payUrl?: string;
+    }>,
+    terminal: CashierTerminal
+  ) {
+    return [...channels].sort((left, right) => {
+      return (
+        this.getHostedChannelPriority(right, terminal) -
+        this.getHostedChannelPriority(left, terminal)
+      );
+    })[0];
+  }
+
+  private getHostedChannelPriority(
+    channel: {
+      providerCode?: string;
+      channel: string;
+      sessionStatus: string;
+      actionType: string;
+      payUrl?: string;
+    },
+    terminal: CashierTerminal
+  ): number {
+    const statusWeight =
+      channel.sessionStatus === "READY"
+        ? 200
+        : channel.sessionStatus === "PENDING"
+          ? 100
+          : 0;
+    const actionWeight =
+      channel.actionType === "REDIRECT_URL"
+        ? 40
+        : channel.actionType === "QR_CODE"
+          ? 30
+          : 0;
+
+    if (channel.providerCode === "ALIPAY") {
+      if (terminal === "mobile") {
+        if (channel.channel === "alipay_wap") {
+          return statusWeight + actionWeight + 30;
+        }
+
+        return statusWeight + actionWeight + (channel.channel === "alipay_page" ? 20 : 10);
+      }
+
+      if (channel.channel === "alipay_qr") {
+        return statusWeight + actionWeight + 30;
+      }
+
+      return statusWeight + actionWeight + (channel.channel === "alipay_page" ? 20 : 10);
+    }
+
+    if (channel.providerCode === "WECHAT_PAY") {
+      if (terminal === "mobile") {
+        return statusWeight + actionWeight + (channel.channel === "wechat_jsapi" ? 30 : 20);
+      }
+
+      return statusWeight + actionWeight + (channel.channel === "wechat_qr" ? 30 : 10);
+    }
+
+    return statusWeight + actionWeight;
   }
 
   private hasRequestedAlipay(channels: string[]): boolean {

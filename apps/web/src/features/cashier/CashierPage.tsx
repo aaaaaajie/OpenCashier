@@ -9,7 +9,7 @@ import {
   Spin,
   Typography
 } from "antd";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 
 interface CashierOrder {
@@ -37,6 +37,12 @@ interface CashierChannel {
   sdkPackage?: string;
   note: string;
   providerPayload?: Record<string, unknown>;
+}
+
+interface CashierProviderOption {
+  key: string;
+  channel: CashierChannel;
+  description: string;
 }
 
 interface CashierTokenPayload {
@@ -68,18 +74,202 @@ function isTerminalStatus(status: string) {
   return status === "SUCCESS" || status === "CLOSED" || status === "EXPIRED";
 }
 
+function resolveProviderName(channel?: CashierChannel): string {
+  if (!channel) {
+    return "该支付方式";
+  }
+
+  if (channel.providerCode === "ALIPAY") {
+    return "支付宝";
+  }
+
+  if (channel.providerCode === "WECHAT_PAY") {
+    return "微信";
+  }
+
+  return channel.displayName;
+}
+
+function resolveProviderBadgeLabel(channel: CashierChannel): string {
+  if (channel.providerCode === "WECHAT_PAY") {
+    return "微信";
+  }
+
+  if (channel.providerCode === "STRIPE") {
+    return "ST";
+  }
+
+  if (channel.providerCode === "PAYPAL") {
+    return "PP";
+  }
+
+  return resolveProviderName(channel).slice(0, 2).toUpperCase();
+}
+
 function resolveChannelFailureMessage(channel?: CashierChannel): string {
+  const providerName = resolveProviderName(channel);
   const note = channel?.note?.trim();
 
   if (!note) {
-    return "当前支付宝支付会话创建失败，请返回外部系统重新发起订单。";
+    return `当前${providerName}支付会话创建失败，请返回外部系统重新发起订单。`;
   }
 
-  if (note.includes("ACCESS_FORBIDDEN")) {
+  if (channel?.providerCode === "ALIPAY" && note.includes("ACCESS_FORBIDDEN")) {
     return "当前支付宝应用没有生成扫码二维码的权限，无法调用 alipay.trade.precreate。请在支付宝开放平台确认已开通当面付/扫码支付，并检查当前生效的 AppId 与证书是否匹配。";
   }
 
-  return `当前支付宝支付会话创建失败：${note}`;
+  return `当前${providerName}支付会话创建失败：${note}`;
+}
+
+function resolveProviderOptionDescription(channel: CashierChannel): string {
+  if (channel.sessionStatus === "READY" && channel.actionType === "QR_CODE") {
+    return "进入收银台后直接扫码";
+  }
+
+  if (channel.sessionStatus === "READY" && channel.actionType === "REDIRECT_URL") {
+    return "进入收银台后自动跳转";
+  }
+
+  if (channel.sessionStatus === "FAILED") {
+    return "当前支付会话暂不可用";
+  }
+
+  return "正在获取支付会话";
+}
+
+function resolveQrTitle(channel: CashierChannel): string {
+  if (channel.providerCode === "ALIPAY") {
+    return "支付宝扫码支付";
+  }
+
+  if (channel.providerCode === "WECHAT_PAY") {
+    return "微信扫码支付";
+  }
+
+  return `${resolveProviderName(channel)}扫码支付`;
+}
+
+function resolveQrDescription(channel: CashierChannel): string {
+  if (channel.providerCode === "ALIPAY") {
+    return "请使用支付宝 App 扫码完成支付";
+  }
+
+  if (channel.providerCode === "WECHAT_PAY") {
+    return "请使用微信扫一扫完成支付";
+  }
+
+  return `请使用${resolveProviderName(channel)}完成支付`;
+}
+
+function resolveRedirectDescription(channel: CashierChannel): string {
+  return `平台已为当前订单匹配 ${resolveProviderName(
+    channel
+  )} 支付链路，如果页面没有自动跳转，请点击下方按钮继续。`;
+}
+
+function resolvePendingTitle(channel?: CashierChannel): string {
+  if (!channel) {
+    return "请选择支付品牌";
+  }
+
+  return `正在准备${resolveProviderName(channel)}支付`;
+}
+
+function resolveProviderRoutingWeight(
+  channel: CashierChannel,
+  terminal: CashierTerminal
+): number {
+  if (channel.providerCode === "ALIPAY") {
+    if (terminal === "mobile") {
+      if (channel.channel === "alipay_wap") {
+        return 30;
+      }
+
+      return channel.channel === "alipay_page" ? 20 : 10;
+    }
+
+    if (channel.channel === "alipay_qr") {
+      return 30;
+    }
+
+    return channel.channel === "alipay_page" ? 20 : 10;
+  }
+
+  if (channel.providerCode === "WECHAT_PAY") {
+    if (terminal === "mobile") {
+      return channel.channel === "wechat_jsapi" ? 30 : 20;
+    }
+
+    return channel.channel === "wechat_qr" ? 30 : 10;
+  }
+
+  return 0;
+}
+
+function getChannelSelectionPriority(
+  channel: CashierChannel,
+  terminal: CashierTerminal
+): number {
+  const statusWeight =
+    channel.sessionStatus === "READY"
+      ? 200
+      : channel.sessionStatus === "PENDING"
+        ? 100
+        : 0;
+  const actionWeight =
+    channel.actionType === "QR_CODE"
+      ? 30
+      : channel.actionType === "REDIRECT_URL"
+        ? 20
+        : 0;
+
+  return statusWeight + actionWeight + resolveProviderRoutingWeight(channel, terminal);
+}
+
+function selectPreferredProviderChannel(
+  channels: CashierChannel[],
+  terminal: CashierTerminal
+): CashierChannel | undefined {
+  return [...channels].sort(
+    (left, right) =>
+      getChannelSelectionPriority(right, terminal) -
+      getChannelSelectionPriority(left, terminal)
+  )[0];
+}
+
+function buildProviderOptions(
+  channels: CashierChannel[],
+  terminal: CashierTerminal
+): CashierProviderOption[] {
+  const grouped = new Map<string, CashierChannel[]>();
+
+  for (const channel of channels) {
+    const key = channel.providerCode || channel.channel;
+    const bucket = grouped.get(key);
+
+    if (bucket) {
+      bucket.push(channel);
+      continue;
+    }
+
+    grouped.set(key, [channel]);
+  }
+
+  return [...grouped.entries()]
+    .map(([key, providerChannels]) => {
+      const channel = selectPreferredProviderChannel(providerChannels, terminal);
+
+      if (!channel) {
+        return undefined;
+      }
+
+      return {
+        key,
+        channel,
+        description: resolveProviderOptionDescription(channel)
+      };
+    })
+    .filter((item): item is CashierProviderOption => Boolean(item));
 }
 
 function detectCashierTerminal(): CashierTerminal {
@@ -97,44 +287,6 @@ function detectCashierTerminal(): CashierTerminal {
   }
 
   return "desktop";
-}
-
-function getAlipayChannelPriority(
-  channel: CashierChannel,
-  terminal: CashierTerminal
-): number {
-  const statusWeight =
-    channel.sessionStatus === "READY"
-      ? 100
-      : channel.sessionStatus === "PENDING"
-        ? 50
-        : 0;
-
-  const channelWeight =
-    terminal === "mobile"
-      ? channel.channel === "alipay_wap"
-        ? 30
-        : channel.channel === "alipay_page"
-          ? 20
-          : 10
-      : channel.channel === "alipay_qr"
-        ? 30
-        : channel.channel === "alipay_page"
-          ? 20
-          : 10;
-
-  return statusWeight + channelWeight;
-}
-
-function selectPreferredAlipayChannel(
-  channels: CashierChannel[],
-  terminal: CashierTerminal
-): CashierChannel | undefined {
-  return [...channels].sort(
-    (left, right) =>
-      getAlipayChannelPriority(right, terminal) -
-      getAlipayChannelPriority(left, terminal)
-  )[0];
 }
 
 function parseCashierTokenPayload(
@@ -168,6 +320,18 @@ function parseCashierTokenPayload(
   }
 }
 
+function renderProviderIcon(channel: CashierChannel) {
+  if (channel.providerCode === "ALIPAY") {
+    return <AlipayCircleFilled className="cashier-method-icon" />;
+  }
+
+  return (
+    <span className="cashier-method-badge cashier-method-badge-generic">
+      {resolveProviderBadgeLabel(channel)}
+    </span>
+  );
+}
+
 export function CashierPage() {
   const { cashierToken } = useParams();
   const terminal = useMemo(() => detectCashierTerminal(), []);
@@ -192,10 +356,11 @@ export function CashierPage() {
     order: CashierOrder;
     channels: CashierChannel[];
   } | null>(null);
-  const [selectedMethod, setSelectedMethod] = useState("alipay");
+  const [selectedProvider, setSelectedProvider] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const redirectedPayUrlRef = useRef<string | null>(null);
   const tokenExpireAt = tokenPayload?.expireTime
     ? new Date(tokenPayload.expireTime).getTime()
     : Number.NaN;
@@ -204,9 +369,10 @@ export function CashierPage() {
 
   useEffect(() => {
     setCashierState(null);
-    setSelectedMethod("alipay");
+    setSelectedProvider(null);
     setLoading(true);
     setError(null);
+    redirectedPayUrlRef.current = null;
   }, [cashierToken]);
 
   useEffect(() => {
@@ -287,16 +453,49 @@ export function CashierPage() {
 
   const orderInfo = cashierState?.order ?? fallbackOrder;
   const returnUrl = orderInfo.returnUrl?.trim();
-  const alipayChannel = selectPreferredAlipayChannel(
-    cashierState?.channels.filter(
-      (item) => item.providerCode === "ALIPAY" || item.channel.startsWith("alipay")
-    ) ?? [],
-    terminal
+  const providerOptions = useMemo(
+    () => buildProviderOptions(cashierState?.channels ?? [], terminal),
+    [cashierState?.channels, terminal]
   );
+  const hasMultipleProviders = providerOptions.length > 1;
+
+  useEffect(() => {
+    if (providerOptions.length === 0) {
+      setSelectedProvider(null);
+      return;
+    }
+
+    setSelectedProvider((current) => {
+      if (providerOptions.length === 1) {
+        return providerOptions[0]?.key ?? null;
+      }
+
+      if (current && providerOptions.some((option) => option.key === current)) {
+        return current;
+      }
+
+      return null;
+    });
+  }, [providerOptions]);
+
+  const selectedProviderOption =
+    providerOptions.find((option) => option.key === selectedProvider) ??
+    (providerOptions.length === 1 ? providerOptions[0] : undefined);
+  const selectedChannel = selectedProviderOption?.channel;
+  const pollingChannel =
+    selectedChannel ??
+    providerOptions.find((option) => option.channel.sessionStatus !== "FAILED")?.channel ??
+    providerOptions[0]?.channel;
   const shouldPoll =
     Boolean(cashierToken) &&
     !isTerminalStatus(orderInfo.status) &&
-    alipayChannel?.sessionStatus !== "FAILED";
+    Boolean(pollingChannel) &&
+    pollingChannel?.sessionStatus !== "FAILED";
+  const redirectUrl =
+    selectedChannel?.sessionStatus === "READY" &&
+    selectedChannel.actionType === "REDIRECT_URL"
+      ? selectedChannel.payUrl?.trim()
+      : undefined;
 
   useEffect(() => {
     if (!shouldPoll) {
@@ -325,6 +524,31 @@ export function CashierPage() {
       window.clearTimeout(timer);
     };
   }, [orderInfo.status, returnUrl]);
+
+  useEffect(() => {
+    if (!redirectUrl) {
+      redirectedPayUrlRef.current = null;
+      return;
+    }
+
+    if (hasMultipleProviders && !selectedProvider) {
+      return;
+    }
+
+    if (redirectedPayUrlRef.current === redirectUrl) {
+      return;
+    }
+
+    redirectedPayUrlRef.current = redirectUrl;
+
+    const timer = window.setTimeout(() => {
+      window.location.replace(redirectUrl);
+    }, 200);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [redirectUrl, hasMultipleProviders, selectedProvider]);
 
   if (!cashierToken) {
     return (
@@ -436,8 +660,6 @@ export function CashierPage() {
     );
   }
 
-  const selectedChannel = selectedMethod === "alipay" ? alipayChannel : undefined;
-
   return (
     <div className="cashier-shell">
       <Card className="cashier-card">
@@ -466,48 +688,61 @@ export function CashierPage() {
           </Typography.Text>
         </div>
 
-        <div className="cashier-content">
-          <div className="cashier-column">
-            <Typography.Text strong>选择支付方式</Typography.Text>
-            <button
-              type="button"
-              className={`cashier-method ${
-                selectedMethod === "alipay" ? "cashier-method-active" : ""
-              }`}
-              onClick={() => setSelectedMethod("alipay")}
-            >
-              <span className="cashier-method-main">
-                <AlipayCircleFilled className="cashier-method-icon" />
-                <span>
-                  <span className="cashier-method-title">支付宝</span>
-                </span>
-              </span>
-              {selectedMethod === "alipay" ? (
-                <CheckCircleFilled className="cashier-method-check" />
-              ) : null}
-            </button>
-          </div>
+        <div
+          className={`cashier-content${hasMultipleProviders ? "" : " cashier-content-single"}`}
+        >
+          {hasMultipleProviders ? (
+            <div className="cashier-column">
+              <Typography.Text strong>选择支付品牌</Typography.Text>
+              {providerOptions.map((option) => (
+                <button
+                  key={option.key}
+                  type="button"
+                  className={`cashier-method ${
+                    selectedProvider === option.key ? "cashier-method-active" : ""
+                  }`}
+                  onClick={() => setSelectedProvider(option.key)}
+                >
+                  <span className="cashier-method-main">
+                    {renderProviderIcon(option.channel)}
+                    <span>
+                      <span className="cashier-method-title">
+                        {option.channel.displayName}
+                      </span>
+                      <span className="cashier-method-desc">{option.description}</span>
+                    </span>
+                  </span>
+                  {selectedProvider === option.key ? (
+                    <CheckCircleFilled className="cashier-method-check" />
+                  ) : null}
+                </button>
+              ))}
+            </div>
+          ) : null}
 
           <div className="cashier-column">
             <Card className="cashier-panel" bordered={false}>
               {!selectedChannel ? (
                 <Space direction="vertical" size={12} className="cashier-panel-content">
                   <Typography.Title level={4} style={{ margin: 0 }}>
-                    支付方式暂未开通
+                    {resolvePendingTitle()}
                   </Typography.Title>
                   <Typography.Text type="secondary">
-                    当前订单尚未返回可用的支付宝支付会话。
+                    {hasMultipleProviders
+                      ? "当前订单支持多个支付品牌，请先选择一个支付品牌继续付款。"
+                      : "当前订单尚未返回可用的支付会话。"}
                   </Typography.Text>
                 </Space>
               ) : selectedChannel.sessionStatus === "READY" &&
+                selectedChannel.actionType === "QR_CODE" &&
                 selectedChannel.qrContent ? (
                 <Space direction="vertical" size={16} className="cashier-panel-content">
                   <Typography.Title level={4} style={{ margin: 0 }}>
-                    支付宝扫码支付
+                    {resolveQrTitle(selectedChannel)}
                   </Typography.Title>
                   <QRCode value={selectedChannel.qrContent} size={220} />
                   <Typography.Text type="secondary">
-                    请使用支付宝 App 扫码完成支付
+                    {resolveQrDescription(selectedChannel)}
                   </Typography.Text>
                 </Space>
               ) : selectedChannel.sessionStatus === "FAILED" ? (
@@ -527,20 +762,29 @@ export function CashierPage() {
                     />
                   ) : null}
                   <Button type="primary" onClick={() => setReloadKey((value) => value + 1)}>
-                    重新获取二维码
+                    重新获取支付会话
                   </Button>
                 </Space>
-              ) : selectedChannel.actionType === "REDIRECT_URL" && selectedChannel.payUrl ? (
+              ) : selectedChannel.sessionStatus === "READY" &&
+                selectedChannel.actionType === "REDIRECT_URL" &&
+                redirectUrl ? (
                 <Space direction="vertical" size={12} className="cashier-panel-content">
-                  <Button type="primary" href={selectedChannel.payUrl} target="_blank">
-                    前往支付宝
+                  <Spin />
+                  <Typography.Title level={4} style={{ margin: 0 }}>
+                    正在跳转到{resolveProviderName(selectedChannel)}
+                  </Typography.Title>
+                  <Typography.Text type="secondary">
+                    {resolveRedirectDescription(selectedChannel)}
+                  </Typography.Text>
+                  <Button type="primary" onClick={() => window.location.replace(redirectUrl)}>
+                    立即前往{resolveProviderName(selectedChannel)}
                   </Button>
                 </Space>
               ) : (
                 <Space direction="vertical" size={12} className="cashier-panel-content">
                   <Spin />
                   <Typography.Title level={4} style={{ margin: 0 }}>
-                    正在生成支付宝二维码
+                    {resolvePendingTitle(selectedChannel)}
                   </Typography.Title>
                   <Typography.Text type="secondary">
                     页面会自动刷新支付状态，请稍候。

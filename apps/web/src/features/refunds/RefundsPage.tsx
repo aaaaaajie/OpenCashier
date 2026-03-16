@@ -1,37 +1,128 @@
-import { Card, Table, Tag, Typography } from "antd";
+import { Alert, Card, Space, Table, Tag, Typography } from "antd";
+import { useCallback, useEffect, useState } from "react";
 
-const data = [
-  {
-    merchantRefundNo: "REFUND_10001",
-    platformOrderNo: "P202603120001",
-    refundAmount: 3000,
-    status: "SUCCESS",
-    reason: "用户取消"
+const statusColorMap: Record<string, string> = {
+  CREATED: "default",
+  PROCESSING: "processing",
+  SUCCESS: "green",
+  FAILED: "red",
+  CLOSED: "default"
+};
+
+interface RefundRecord {
+  appId: string;
+  merchantRefundNo: string;
+  platformRefundNo: string;
+  platformOrderNo: string;
+  refundAmount: number;
+  status: string;
+  reason: string;
+  createdAt: string;
+  successTime: string | null;
+}
+
+function formatDateTime(value: string | null): string {
+  if (!value) {
+    return "-";
   }
-];
+
+  const date = new Date(value);
+
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleString("zh-CN");
+}
 
 export function RefundsPage() {
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [data, setData] = useState<RefundRecord[]>([]);
+  const apiBaseUrl =
+    import.meta.env.VITE_API_BASE_URL ?? "http://localhost:3000/api/v1";
+
+  const loadRefunds = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      const response = await fetch(`${apiBaseUrl}/admin/refunds`);
+
+      if (!response.ok) {
+        throw new Error(`Refund list request failed with status ${response.status}`);
+      }
+
+      const json = (await response.json()) as { data: RefundRecord[] };
+      setData(json.data);
+    } catch (caught) {
+      setError(
+        caught instanceof Error ? caught.message : "Failed to load refund orders"
+      );
+    } finally {
+      setLoading(false);
+    }
+  }, [apiBaseUrl]);
+
+  useEffect(() => {
+    void loadRefunds();
+  }, [loadRefunds]);
+
   return (
     <Card className="page-card">
-      <Typography.Title level={3} style={{ marginTop: 0 }}>
-        退款单
-      </Typography.Title>
-      <Table
-        rowKey="merchantRefundNo"
-        dataSource={data}
-        columns={[
-          { title: "退款单号", dataIndex: "merchantRefundNo" },
-          { title: "平台订单号", dataIndex: "platformOrderNo" },
-          { title: "退款金额(分)", dataIndex: "refundAmount" },
-          {
-            title: "状态",
-            dataIndex: "status",
-            render: (value: string) => <Tag color="green">{value}</Tag>
-          },
-          { title: "原因", dataIndex: "reason" }
-        ]}
-      />
+      <Space direction="vertical" size={16} style={{ width: "100%" }}>
+        <Typography.Title level={3} style={{ marginTop: 0 }}>
+          退款单
+        </Typography.Title>
+        {error ? (
+          <Alert type="error" showIcon message="退款单加载失败" description={error} />
+        ) : null}
+        <Table
+          rowKey="merchantRefundNo"
+          loading={loading}
+          dataSource={data}
+          scroll={{ x: 1380 }}
+          columns={[
+            {
+              title: "退款单号",
+              dataIndex: "merchantRefundNo",
+              width: 240,
+              ellipsis: true
+            },
+            {
+              title: "平台退款单号",
+              dataIndex: "platformRefundNo",
+              width: 240,
+              ellipsis: true
+            },
+            {
+              title: "平台订单号",
+              dataIndex: "platformOrderNo",
+              width: 240,
+              ellipsis: true
+            },
+            { title: "应用", dataIndex: "appId", width: 120, ellipsis: true },
+            { title: "退款金额(分)", dataIndex: "refundAmount", width: 120 },
+            {
+              title: "状态",
+              dataIndex: "status",
+              width: 120,
+              render: (value: string) => (
+                <Tag color={statusColorMap[value] ?? "default"}>{value}</Tag>
+              )
+            },
+            { title: "原因", dataIndex: "reason", width: 220, ellipsis: true },
+            {
+              title: "创建时间",
+              dataIndex: "createdAt",
+              width: 180,
+              render: (value: string) => formatDateTime(value)
+            },
+            {
+              title: "成功时间",
+              dataIndex: "successTime",
+              width: 180,
+              render: (value: string | null) => formatDateTime(value)
+            }
+          ]}
+        />
+      </Space>
     </Card>
   );
 }
-

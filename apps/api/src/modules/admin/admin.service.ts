@@ -46,6 +46,14 @@ export class AdminService {
     return this.merchantNotifyDispatcherService.listTasks();
   }
 
+  listOrders() {
+    return this.paymentStoreService.listOrders();
+  }
+
+  listRefunds() {
+    return this.paymentStoreService.listRefunds();
+  }
+
   retryNotifyTask(notifyId: string) {
     return this.merchantNotifyDispatcherService.replayTask(notifyId);
   }

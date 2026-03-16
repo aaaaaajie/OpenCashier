@@ -66,6 +66,18 @@ export class AdminController {
     return this.adminService.listNotifyTasks();
   }
 
+  @Get("orders")
+  @ApiOperation({ summary: "List pay orders" })
+  getOrders() {
+    return this.adminService.listOrders();
+  }
+
+  @Get("refunds")
+  @ApiOperation({ summary: "List refund orders" })
+  getRefunds() {
+    return this.adminService.listRefunds();
+  }
+
   @Post("notifications/:notifyId/retry")
   @ApiOperation({ summary: "Replay merchant notify task" })
   @ApiParam({ name: "notifyId" })

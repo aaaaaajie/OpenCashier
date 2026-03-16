@@ -51,9 +51,6 @@ export function MerchantAppsPage() {
           <Typography.Title level={3} style={{ marginTop: 0 }}>
             商户应用
           </Typography.Title>
-          <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
-            第一阶段先提供接入配置骨架，后续再补充密钥轮换、回调白名单和权限管理。
-          </Typography.Paragraph>
         </div>
         {error ? (
           <Alert type="error" showIcon message="商户应用加载失败" description={error} />

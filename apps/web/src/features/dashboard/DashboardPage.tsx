@@ -8,7 +8,6 @@ import {
   Skeleton,
   Statistic,
   Table,
-  Typography
 } from "antd";
 
 interface DashboardState {
@@ -36,6 +35,12 @@ interface DashboardState {
     enabled: boolean;
     note: string;
   }>;
+}
+
+function formatDateTime(value: string): string {
+  const date = new Date(value);
+
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleString("zh-CN");
 }
 
 export function DashboardPage() {
@@ -124,12 +129,28 @@ export function DashboardPage() {
               rowKey="platformOrderNo"
               pagination={false}
               dataSource={dashboard?.latestOrders ?? []}
+              scroll={{ x: 860 }}
               columns={[
-                { title: "平台单号", dataIndex: "platformOrderNo" },
-                { title: "商户单号", dataIndex: "merchantOrderNo" },
-                { title: "金额(分)", dataIndex: "amount" },
-                { title: "状态", dataIndex: "status" },
-                { title: "创建时间", dataIndex: "createdAt" }
+                {
+                  title: "平台单号",
+                  dataIndex: "platformOrderNo",
+                  width: 240,
+                  ellipsis: true
+                },
+                {
+                  title: "商户单号",
+                  dataIndex: "merchantOrderNo",
+                  width: 260,
+                  ellipsis: true
+                },
+                { title: "金额(分)", dataIndex: "amount", width: 110 },
+                { title: "状态", dataIndex: "status", width: 140, ellipsis: true },
+                {
+                  title: "创建时间",
+                  dataIndex: "createdAt",
+                  width: 180,
+                  render: (value: string) => formatDateTime(value)
+                }
               ]}
             />
           </Card>
@@ -140,44 +161,27 @@ export function DashboardPage() {
               rowKey="merchantRefundNo"
               pagination={false}
               dataSource={dashboard?.latestRefunds ?? []}
+              scroll={{ x: 720 }}
               columns={[
-                { title: "退款单号", dataIndex: "merchantRefundNo" },
-                { title: "支付单号", dataIndex: "platformOrderNo" },
-                { title: "退款金额(分)", dataIndex: "refundAmount" },
-                { title: "状态", dataIndex: "status" }
+                {
+                  title: "退款单号",
+                  dataIndex: "merchantRefundNo",
+                  width: 240,
+                  ellipsis: true
+                },
+                {
+                  title: "支付单号",
+                  dataIndex: "platformOrderNo",
+                  width: 220,
+                  ellipsis: true
+                },
+                { title: "退款金额(分)", dataIndex: "refundAmount", width: 120 },
+                { title: "状态", dataIndex: "status", width: 120, ellipsis: true }
               ]}
             />
           </Card>
         </Col>
       </Row>
-
-      <Card className="page-card" title="支付渠道抽象层">
-        <Table
-          rowKey="providerCode"
-          pagination={false}
-          dataSource={dashboard?.paymentProviders ?? []}
-          columns={[
-            { title: "平台", dataIndex: "displayName" },
-            { title: "Provider Code", dataIndex: "providerCode" },
-            { title: "接入策略", dataIndex: "integrationMode" },
-            {
-              title: "官方 SDK",
-              dataIndex: "officialSdkPackage",
-              render: (value?: string) => value ?? "-"
-            },
-            {
-              title: "支持渠道",
-              dataIndex: "supportedChannels",
-              render: (value: string[]) => value.join(", ")
-            },
-            {
-              title: "是否已配置",
-              dataIndex: "enabled",
-              render: (value: boolean) => (value ? "是" : "否")
-            }
-          ]}
-        />
-      </Card>
     </>
   );
 }

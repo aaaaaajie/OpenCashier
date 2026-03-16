@@ -75,26 +75,18 @@ pnpm smoke:merchant
 
 ```text
 apps/
-  api/   # NestJS API
-  web/   # React + Ant Design 管理台与收银台骨架
+  api/   # API
+  web/   # 收银管理后台
 packages/
   shared/        # 共享类型和常量
   wechatpay-sdk  # 微信支付 SDK 封装
-docs/            # 设计、接入与运维文档
+docs/
 skills/
 ```
 
 ## 文档
 
-- 英文 README: [README.md](./README.md)
-- 本地开发说明: [docs/local-development.md](./docs/local-development.md)
-- 支付宝配置说明: [docs/alipay-configuration.md](./docs/alipay-configuration.md)
-- 外部业务系统接入教程: [docs/plan-merchant-api-integration.md](./docs/plan-merchant-api-integration.md)
-- 支付宝统一收银台路由说明: [docs/plan-alipay-unified-cashier-routing.md](./docs/plan-alipay-unified-cashier-routing.md)
-- 支付回调事件设计: [docs/plan-payment-webhook-event-design.md](./docs/plan-payment-webhook-event-design.md)
-- Stripe 接入规划: [docs/plan-stripe-integration.md](./docs/plan-stripe-integration.md)
-- 微信支付接入规划: [docs/plan-wechatpay-integration.md](./docs/plan-wechatpay-integration.md)
-- 产品背景与 PRD: [docs/plan-prd.md](./docs/plan-prd.md)
+- 商户接入指南: [docs/merchant-api-integration.md](./docs/merchant-api-integration.md)
 
 当前深度文档仍以中文为主；如果你希望补英文文档或双语说明，欢迎直接发 PR。
 

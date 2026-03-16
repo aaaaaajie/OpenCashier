@@ -75,8 +75,8 @@ For environment setup, local tunnel usage, default endpoints, seeded demo data, 
 
 ```text
 apps/
-  api/   # NestJS API
-  web/   # React + Ant Design admin console and cashier shell
+  api/   # API
+  web/   # Cashier admin management
 packages/
   shared/        # Shared types and constants
   wechatpay-sdk  # WeChat Pay SDK wrapper
@@ -86,15 +86,7 @@ skills/
 
 ## Documentation
 
-- Chinese README: [README.zh-CN.md](./README.zh-CN.md)
-- Local development notes (Chinese): [docs/local-development.md](./docs/local-development.md)
-- Alipay configuration notes (Chinese): [docs/alipay-configuration.md](./docs/alipay-configuration.md)
-- Merchant integration guide (Chinese): [docs/plan-merchant-api-integration.md](./docs/plan-merchant-api-integration.md)
-- Alipay hosted cashier routing notes (Chinese): [docs/plan-alipay-unified-cashier-routing.md](./docs/plan-alipay-unified-cashier-routing.md)
-- Payment webhook event design (Chinese): [docs/plan-payment-webhook-event-design.md](./docs/plan-payment-webhook-event-design.md)
-- Stripe integration plan (Chinese): [docs/plan-stripe-integration.md](./docs/plan-stripe-integration.md)
-- WeChat Pay integration plan (Chinese): [docs/plan-wechatpay-integration.md](./docs/plan-wechatpay-integration.md)
-- Product background and PRD (Chinese): [docs/plan-prd.md](./docs/plan-prd.md)
+- Merchant integration guide (Chinese): [docs/merchant-api-integration.md](./docs/merchant-api-integration.md)
 
 Most deep-dive docs are currently Chinese-first. English and bilingual documentation contributions are welcome.
 

@@ -9,6 +9,7 @@ import {
   message
 } from "antd";
 import { useCallback, useEffect, useState } from "react";
+import { getApiBaseUrl } from "../../config/runtime-config";
 
 const statusColorMap: Record<string, string> = {
   SUCCESS: "green",
@@ -39,8 +40,7 @@ export function NotificationsPage() {
   const [retryingId, setRetryingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<NotificationTask[]>([]);
-  const apiBaseUrl =
-    import.meta.env.VITE_API_BASE_URL ?? "http://localhost:3000/api/v1";
+  const apiBaseUrl = getApiBaseUrl();
 
   const loadTasks = useCallback(async () => {
     try {

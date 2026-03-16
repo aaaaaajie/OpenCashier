@@ -11,6 +11,7 @@ import {
 } from "antd";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
+import { getApiBaseUrl } from "../../config/runtime-config";
 
 interface CashierOrder {
   platformOrderNo: string;
@@ -400,8 +401,7 @@ export function CashierPage() {
     }
 
     let cancelled = false;
-    const apiBaseUrl =
-      import.meta.env.VITE_API_BASE_URL ?? "http://localhost:3000/api/v1";
+    const apiBaseUrl = getApiBaseUrl();
 
     async function loadCashierSession() {
       if (!cashierState) {

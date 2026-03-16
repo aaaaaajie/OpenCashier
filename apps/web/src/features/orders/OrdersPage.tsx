@@ -1,5 +1,6 @@
 import { Alert, Button, Card, Space, Table, Tag, Typography } from "antd";
 import { useCallback, useEffect, useState } from "react";
+import { getApiBaseUrl } from "../../config/runtime-config";
 
 const statusColorMap: Record<string, string> = {
   WAIT_PAY: "blue",
@@ -46,8 +47,7 @@ export function OrdersPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<OrderRecord[]>([]);
-  const apiBaseUrl =
-    import.meta.env.VITE_API_BASE_URL ?? "http://localhost:3000/api/v1";
+  const apiBaseUrl = getApiBaseUrl();
 
   const loadOrders = useCallback(async () => {
     try {

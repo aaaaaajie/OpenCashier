@@ -41,7 +41,7 @@ pnpm install
 2. 启动基础设施
 
 ```bash
-docker compose up -d
+docker compose -f docker-compose.infrastructure.yml up -d
 ```
 
 3. 复制环境变量
@@ -86,6 +86,7 @@ skills/
 
 ## 文档
 
+- 镜像部署指南: [docs/deployment.md](./docs/deployment.md)
 - 商户接入指南: [docs/merchant-api-integration.md](./docs/merchant-api-integration.md)
 
 当前深度文档仍以中文为主；如果你希望补英文文档或双语说明，欢迎直接发 PR。

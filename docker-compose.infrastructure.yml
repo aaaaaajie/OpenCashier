@@ -1,10 +1,11 @@
+# Local development infrastructure only. This file does not start the API or web app.
 services:
   postgres:
     image: postgres:16
     container_name: cashier-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_DB: payment_platform
+      POSTGRES_DB: cashier
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
     ports:

@@ -19,7 +19,7 @@ pnpm install
 2. Start local infrastructure:
 
 ```bash
-docker compose up -d
+docker compose -f docker-compose.infrastructure.yml up -d
 ```
 
 3. Copy environment variables:

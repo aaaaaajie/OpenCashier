@@ -9,6 +9,7 @@ import {
   Statistic,
   Table,
 } from "antd";
+import { getApiBaseUrl } from "../../config/runtime-config";
 
 interface DashboardState {
   metrics: Array<{ key: string; label: string; value: number }>;
@@ -48,8 +49,7 @@ export function DashboardPage() {
   const [error, setError] = useState<string | null>(null);
   const [health, setHealth] = useState<Record<string, string> | null>(null);
   const [dashboard, setDashboard] = useState<DashboardState | null>(null);
-  const apiBaseUrl =
-    import.meta.env.VITE_API_BASE_URL ?? "http://localhost:3000/api/v1";
+  const apiBaseUrl = getApiBaseUrl();
 
   useEffect(() => {
     async function load() {

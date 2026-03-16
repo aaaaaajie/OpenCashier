@@ -1,0 +1,2 @@
+window.__OPENCASHIER_RUNTIME_CONFIG__ =
+  window.__OPENCASHIER_RUNTIME_CONFIG__ ?? {};

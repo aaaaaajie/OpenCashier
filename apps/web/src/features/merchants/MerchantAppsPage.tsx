@@ -1,5 +1,6 @@
 import { Alert, Card, Space, Table, Tag, Typography } from "antd";
 import { useEffect, useState } from "react";
+import { getApiBaseUrl } from "../../config/runtime-config";
 
 export function MerchantAppsPage() {
   const [loading, setLoading] = useState(true);
@@ -15,8 +16,7 @@ export function MerchantAppsPage() {
   >([]);
 
   useEffect(() => {
-    const apiBaseUrl =
-      import.meta.env.VITE_API_BASE_URL ?? "http://localhost:3000/api/v1";
+    const apiBaseUrl = getApiBaseUrl();
 
     async function loadMerchantApps() {
       try {

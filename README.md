@@ -41,7 +41,7 @@ pnpm install
 2. Start infrastructure
 
 ```bash
-docker compose up -d
+docker compose -f docker-compose.infrastructure.yml up -d
 ```
 
 3. Copy environment variables
@@ -86,6 +86,7 @@ skills/
 
 ## Documentation
 
+- Deployment guide (Chinese): [docs/deployment.md](./docs/deployment.md)
 - Merchant integration guide (Chinese): [docs/merchant-api-integration.md](./docs/merchant-api-integration.md)
 
 Most deep-dive docs are currently Chinese-first. English and bilingual documentation contributions are welcome.

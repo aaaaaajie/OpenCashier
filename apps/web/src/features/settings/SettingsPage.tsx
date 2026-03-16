@@ -25,6 +25,7 @@ import {
   Tooltip,
   Typography,
 } from "antd";
+import { getApiBaseUrl } from "../../config/runtime-config";
 
 type ProviderCatalogItem = {
   providerCode: string;
@@ -533,8 +534,7 @@ export function SettingsPage() {
   const { message: messageApi, modal } = AntdApp.useApp();
   const [modalForm] = Form.useForm<ProviderModalValues>();
 
-  const apiBaseUrl =
-    import.meta.env.VITE_API_BASE_URL ?? "http://localhost:3000/api/v1";
+  const apiBaseUrl = getApiBaseUrl();
   const selectedProviderGroupKey = Form.useWatch("providerGroupKey", modalForm);
   const selectedAlipayAuthMode = Form.useWatch("ALIPAY_AUTH_MODE", modalForm);
   const selectedWechatPayVerifyMode = Form.useWatch(

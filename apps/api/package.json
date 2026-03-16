@@ -10,10 +10,10 @@
     "pretypecheck": "pnpm --filter @opencashier/wechatpay-sdk build",
     "start": "node dist/main.js",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "prisma:generate": "sh -lc 'set -a && . ../../.env && set +a && prisma generate --schema prisma/schema.prisma'",
-    "prisma:migrate:dev": "sh -lc 'set -a && . ../../.env && set +a && prisma migrate dev --schema prisma/schema.prisma'",
-    "prisma:studio": "sh -lc 'set -a && . ../../.env && set +a && prisma studio --schema prisma/schema.prisma'",
-    "prisma:db:push": "sh -lc 'set -a && . ../../.env && set +a && prisma db push --schema prisma/schema.prisma'"
+    "prisma:generate": "sh -lc 'if [ -f ../../.env ]; then set -a && . ../../.env && set +a; fi; pnpm exec prisma generate --schema prisma/schema.prisma'",
+    "prisma:migrate:dev": "sh -lc 'if [ -f ../../.env ]; then set -a && . ../../.env && set +a; fi; pnpm exec prisma migrate dev --schema prisma/schema.prisma'",
+    "prisma:studio": "sh -lc 'if [ -f ../../.env ]; then set -a && . ../../.env && set +a; fi; pnpm exec prisma studio --schema prisma/schema.prisma'",
+    "prisma:db:push": "sh -lc 'if [ -f ../../.env ]; then set -a && . ../../.env && set +a; fi; pnpm exec prisma db push --schema prisma/schema.prisma'"
   },
   "dependencies": {
     "@nestjs/common": "^11.1.6",

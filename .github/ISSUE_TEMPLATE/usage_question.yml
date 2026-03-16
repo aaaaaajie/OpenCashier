@@ -1,0 +1,44 @@
+name: Usage question
+description: Ask an integration, setup, or usage question about OpenCashier.
+title: "[Question]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this form for implementation and integration questions. If you already know the issue is a bug, please use the bug report template instead.
+  - type: dropdown
+    id: topic
+    attributes:
+      label: Topic
+      options:
+        - Local setup
+        - Merchant API integration
+        - Hosted cashier flow
+        - Alipay
+        - WeChat Pay
+        - Stripe
+        - PayPal
+        - Docs
+        - Deployment
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: goal
+    attributes:
+      label: What are you trying to build?
+      placeholder: I want to let my SaaS product create orders and redirect users to the hosted cashier.
+    validations:
+      required: true
+  - type: textarea
+    id: question
+    attributes:
+      label: Question
+      description: Ask the exact question and include any relevant endpoint, config, or screenshot.
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Relevant context
+      description: Include provider, environment, docs already read, and current blockers.

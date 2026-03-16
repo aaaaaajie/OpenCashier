@@ -1,0 +1,52 @@
+name: Feature request
+description: Propose a new feature, provider capability, or workflow improvement.
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please explain the user or business problem first. Good feature requests describe the workflow gap, not just the preferred implementation.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Related area
+      options:
+        - Merchant API
+        - Hosted cashier
+        - Admin console
+        - Alipay
+        - WeChat Pay
+        - Stripe
+        - PayPal
+        - Docs
+        - Tooling / developer experience
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem statement
+      description: What is hard, missing, or blocked today?
+      placeholder: We need the platform to support ...
+    validations:
+      required: true
+  - type: textarea
+    id: proposed
+    attributes:
+      label: Proposed solution
+      description: Describe the outcome you want. Implementation details are optional.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: What workarounds exist today?
+  - type: textarea
+    id: impact
+    attributes:
+      label: Expected impact
+      description: Who benefits, and how should success be measured?

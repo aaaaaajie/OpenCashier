@@ -1,0 +1,71 @@
+name: Bug report
+description: Report a reproducible bug in the API, cashier, admin console, or provider integrations.
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug. Please provide a minimal reproduction and enough context to help locate the regression quickly.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Affected area
+      options:
+        - API
+        - Hosted cashier
+        - Admin console
+        - Alipay
+        - WeChat Pay
+        - Stripe
+        - PayPal
+        - Docs
+        - Tooling / developer experience
+    validations:
+      required: true
+  - type: textarea
+    id: summary
+    attributes:
+      label: Bug summary
+      description: Describe the problem in one or two sentences.
+      placeholder: A refund request returns CHANNEL_UNAVAILABLE even though the provider is configured.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Include requests, URLs, or UI steps.
+      placeholder: |
+        1. Configure provider settings
+        2. Create an order with ...
+        3. Open the cashier URL
+        4. Observe the error
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: env
+    attributes:
+      label: Environment
+      description: Include commit SHA, browser, OS, provider sandbox/production, and any relevant env setup.
+      placeholder: main@abc123, macOS 15, Chrome 134, Alipay sandbox
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs, screenshots, or request IDs
+      description: Paste any relevant logs or attach screenshots.

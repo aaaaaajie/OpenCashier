@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Support and usage help
+    url: https://github.com/aaaaaajie/OpenCashier/blob/main/.github/SUPPORT.md
+    about: Read the support guide before opening a question or integration issue.
+  - name: Security policy
+    url: https://github.com/aaaaaajie/OpenCashier/blob/main/.github/SECURITY.md
+    about: Use the private security reporting path for vulnerabilities.

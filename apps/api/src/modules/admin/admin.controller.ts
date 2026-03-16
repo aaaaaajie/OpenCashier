@@ -51,7 +51,7 @@ export class AdminController {
   }
 
   @Post("platform-configs/:configKey/validate")
-  @ApiOperation({ summary: "Validate whether a payment platform config is effective" })
+  @ApiOperation({ summary: "Validate whether a platform config is effective" })
   @ApiParam({ name: "configKey" })
   validatePlatformConfig(
     @Param("configKey") configKey: string,

@@ -1,5 +1,5 @@
 {
-  "name": "@payment-platform/web",
+  "name": "@opencashier/web",
   "version": "0.1.0",
   "private": true,
   "scripts": {

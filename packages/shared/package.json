@@ -1,5 +1,5 @@
 {
-  "name": "@payment-platform/shared",
+  "name": "@opencashier/shared",
   "version": "0.1.0",
   "private": true,
   "main": "dist/index.js",
@@ -15,4 +15,3 @@
     "typescript": "^5.8.3"
   }
 }
-

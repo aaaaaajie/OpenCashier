@@ -1,4 +1,4 @@
-# Payment Platform
+# OpenCashier
 
 统一收银台第一阶段框架，基于：
 
@@ -44,11 +44,11 @@ cp .env.example .env
 `PLATFORM_CONFIG_MASTER_KEY` 用于加密后台写入数据库的私钥和 Secret，生产环境请务必替换。
 支付渠道参数已经迁移到后台数据库，SDK 不再直接从环境变量读取 `ALIPAY_*`、`STRIPE_*`、`PAYPAL_*`、`WECHATPAY_*`。
 
-4. 生成 Prisma Client 并运行开发迁移
+4. 生成 Prisma Client 并同步数据库结构
 
 ```bash
 pnpm prisma:generate
-pnpm prisma:migrate:dev
+pnpm prisma:db:push
 ```
 
 5. 启动开发环境
@@ -152,4 +152,4 @@ pnpm tunnel:alipay
 
 ## 接入文档
 
-- 外部业务系统接入教程：[merchant-api-integration.md](/Users/huoshijie/code/payment-platform/docs/merchant-api-integration.md)
+- 外部业务系统接入教程：[merchant-api-integration.md](./docs/merchant-api-integration.md)

@@ -9,7 +9,7 @@ import {
   WechatPayClient,
   type WechatPayNotificationEnvelope,
   type WechatPayPaymentNotificationResource
-} from "@payment-platform/wechatpay-sdk";
+} from "@opencashier/wechatpay-sdk";
 import { BasePaymentChannelAdapter } from "../base-payment-channel.adapter";
 import { ChannelProviderConfigService } from "../channel-provider-config.service";
 import {

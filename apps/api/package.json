@@ -1,18 +1,19 @@
 {
-  "name": "@payment-platform/api",
+  "name": "@opencashier/api",
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "predev": "pnpm --filter @payment-platform/wechatpay-sdk build",
+    "predev": "pnpm --filter @opencashier/wechatpay-sdk build",
     "dev": "nest start --watch",
-    "prebuild": "pnpm --filter @payment-platform/wechatpay-sdk build",
+    "prebuild": "pnpm --filter @opencashier/wechatpay-sdk build",
     "build": "nest build",
-    "pretypecheck": "pnpm --filter @payment-platform/wechatpay-sdk build",
+    "pretypecheck": "pnpm --filter @opencashier/wechatpay-sdk build",
     "start": "node dist/main.js",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "prisma:generate": "prisma generate --schema prisma/schema.prisma",
-    "prisma:migrate:dev": "prisma migrate dev --schema prisma/schema.prisma",
-    "prisma:studio": "prisma studio --schema prisma/schema.prisma"
+    "prisma:generate": "sh -lc 'set -a && . ../../.env && set +a && prisma generate --schema prisma/schema.prisma'",
+    "prisma:migrate:dev": "sh -lc 'set -a && . ../../.env && set +a && prisma migrate dev --schema prisma/schema.prisma'",
+    "prisma:studio": "sh -lc 'set -a && . ../../.env && set +a && prisma studio --schema prisma/schema.prisma'",
+    "prisma:db:push": "sh -lc 'set -a && . ../../.env && set +a && prisma db push --schema prisma/schema.prisma'"
   },
   "dependencies": {
     "@nestjs/common": "^11.1.6",
@@ -21,7 +22,7 @@
     "@nestjs/platform-express": "^11.1.6",
     "@nestjs/schedule": "^6.0.0",
     "@nestjs/swagger": "^11.2.0",
-    "@payment-platform/wechatpay-sdk": "workspace:*",
+    "@opencashier/wechatpay-sdk": "workspace:*",
     "@prisma/client": "^6.16.2",
     "alipay-sdk": "^4.3.0",
     "class-transformer": "^0.5.1",

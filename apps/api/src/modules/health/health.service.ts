@@ -8,10 +8,9 @@ export class HealthService {
   getHealth() {
     return {
       status: "ok",
-      service: this.configService.get<string>("APP_NAME") ?? "payment-platform",
+      service: this.configService.get<string>("APP_NAME") ?? "OpenCashier",
       timestamp: new Date().toISOString(),
       version: "0.1.0"
     };
   }
 }
-

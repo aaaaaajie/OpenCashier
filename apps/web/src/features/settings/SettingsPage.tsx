@@ -149,6 +149,7 @@ const PROVIDER_GROUP_APP_ID_KEY = {
 const PROVIDER_GROUP_NOTIFY_PATH = {
   alipay: "/api/v1/notify/alipay",
   wechatpay: "/api/v1/notify/wechatpay",
+  stripe: "/api/v1/notify/stripe",
 } as const satisfies Partial<
   Record<keyof typeof PROVIDER_GROUP_TO_CODE, string>
 >;
@@ -481,7 +482,8 @@ const PROVIDER_CONFIG_GROUPS: PlatformConfigGroupDefinition[] = [
   {
     key: "stripe",
     label: "Stripe 配置",
-    description: "当前仅需平台侧 Secret Key。",
+    description:
+      "首期按 Hosted Checkout 接入，至少需要 Secret Key 和 webhook signing secret。",
     items: [
       {
         key: "STRIPE_SECRET_KEY",
@@ -490,6 +492,27 @@ const PROVIDER_CONFIG_GROUPS: PlatformConfigGroupDefinition[] = [
         secret: true,
         inputType: "PASSWORD",
         placeholder: "已配置时不会回显，重新输入会覆盖当前数据库配置",
+        docLinks: [
+          {
+            label: "API Keys",
+            href: "https://docs.stripe.com/keys",
+          },
+        ],
+      },
+      {
+        key: "STRIPE_WEBHOOK_SECRET",
+        label: "Webhook Signing Secret",
+        description:
+          "Stripe Webhook Endpoint 对应的签名密钥，通常以 whsec_ 开头。",
+        secret: true,
+        inputType: "PASSWORD",
+        placeholder: "已配置时不会回显，重新输入会覆盖当前数据库配置",
+        docLinks: [
+          {
+            label: "Webhook Signatures",
+            href: "https://docs.stripe.com/webhooks/signature",
+          },
+        ],
       },
     ],
   },

@@ -76,16 +76,6 @@ export function DashboardPage() {
 
   return (
     <>
-      <Card className="page-card">
-        <Typography.Title level={3} style={{ marginTop: 0 }}>
-          第一阶段框架总览
-        </Typography.Title>
-        <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
-          当前页面用于确认 API、后台和收银台骨架已经打通。订单、退款和商户应用
-          现在已经走 Prisma + PostgreSQL，下一阶段再接真实支付渠道调用。
-        </Typography.Paragraph>
-      </Card>
-
       {error ? (
         <Alert
           className="page-card"

@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { Prisma, type PayAttempt } from "@prisma/client";
 import { PrismaService } from "../../prisma/prisma.service";
 import { AlipayChannelAdapter } from "../payment/channels/adapters/alipay-channel.adapter";
+import { StripeChannelAdapter } from "../payment/channels/adapters/stripe-channel.adapter";
 import { WechatPayChannelAdapter } from "../payment/channels/adapters/wechatpay-channel.adapter";
 import type { ProviderNotifyResult } from "../payment/channels/payment-channel.types";
 import { PaymentAttemptService } from "../payment/payment-attempt.service";
@@ -12,12 +13,15 @@ const ALIPAY_NOTIFY_CHANNEL = "alipay_notify";
 const ALIPAY_NOTIFY_EVENT_TYPE = "TRADE_NOTIFY";
 const WECHATPAY_NOTIFY_CHANNEL = "wechatpay_notify";
 const WECHATPAY_NOTIFY_EVENT_TYPE = "PAYMENT_NOTIFY";
+const STRIPE_NOTIFY_CHANNEL = "stripe_notify";
+const STRIPE_NOTIFY_EVENT_TYPE = "STRIPE_EVENT";
 
 @Injectable()
 export class NotifyService {
   constructor(
     private readonly prismaService: PrismaService,
     private readonly alipayChannelAdapter: AlipayChannelAdapter,
+    private readonly stripeChannelAdapter: StripeChannelAdapter,
     private readonly wechatPayChannelAdapter: WechatPayChannelAdapter,
     private readonly paymentStoreService: PaymentStoreService,
     private readonly paymentAttemptService: PaymentAttemptService
@@ -243,6 +247,107 @@ export class NotifyService {
     }
   }
 
+  async handleStripeNotify(input: {
+    headers: Record<string, string | string[] | undefined>;
+    body: string;
+  }): Promise<void> {
+    const parsedBody = this.tryParseJson(input.body);
+    const channelEventId = this.resolveStripeChannelEventId(parsedBody, input.body);
+    const eventLog = await this.upsertChannelEventLog({
+      channel: STRIPE_NOTIFY_CHANNEL,
+      channelEventId,
+      eventType: this.asOptionalString(parsedBody?.type) ?? STRIPE_NOTIFY_EVENT_TYPE,
+      rawPayload: {
+        headers: this.normalizeHeaders(input.headers),
+        body: input.body,
+        parsedBody: (parsedBody ?? null) as Prisma.InputJsonValue | null
+      } as Prisma.InputJsonValue
+    });
+
+    if (this.hasProcessedSuccessfully(eventLog.processedResult)) {
+      return;
+    }
+
+    let event: ProviderNotifyResult & { eventType: string };
+
+    try {
+      event = await this.stripeChannelAdapter.verifyCheckoutNotify(input);
+    } catch (error) {
+      await this.updateChannelEventLog(eventLog.id, {
+        processedResult: {
+          status: "VERIFY_FAILED",
+          error: this.toErrorMessage(error, "stripe notify verification failed"),
+          failedAt: new Date().toISOString()
+        }
+      });
+      throw error;
+    }
+
+    let orderStatus = "UNCHANGED";
+    let attemptNo: string | undefined;
+
+    try {
+      const attempt = await this.findStripeAttemptForNotify(event);
+
+      if (attempt) {
+        attemptNo = attempt.attemptNo;
+      }
+
+      if (event.tradeStatus === "SUCCESS") {
+        if (attemptNo) {
+          await this.paymentAttemptService.markAttemptSuccess(attemptNo, {
+            channelRequestNo: event.channelRequestNo,
+            channelTradeNo: event.channelTradeNo,
+            successTime: event.paidTime,
+            channelPayload: event.rawPayload
+          });
+        }
+
+        const order = await this.paymentStoreService.markOrderPaidFromChannel({
+          platformOrderNo: event.platformOrderNo,
+          paidAmount: event.paidAmount,
+          successChannel: attempt?.channel ?? "stripe_checkout",
+          paidTime: event.paidTime
+        });
+
+        orderStatus = order.status;
+      } else if (event.tradeStatus === "CLOSED") {
+        if (attemptNo) {
+          await this.paymentAttemptService.markAttemptCancelled(attemptNo, {
+            failMessage: "stripe checkout session expired"
+          });
+        }
+      }
+
+      await this.updateChannelEventLog(eventLog.id, {
+        resourceNo: event.platformOrderNo,
+        verifyResult: true,
+        processedResult: {
+          status: "PROCESSED",
+          eventType: event.eventType,
+          tradeStatus: event.tradeStatus,
+          orderStatus,
+          attemptNo: attemptNo ?? null,
+          processedAt: new Date().toISOString()
+        }
+      });
+    } catch (error) {
+      await this.updateChannelEventLog(eventLog.id, {
+        resourceNo: event.platformOrderNo,
+        verifyResult: true,
+        processedResult: {
+          status: "PROCESS_FAILED",
+          eventType: event.eventType,
+          tradeStatus: event.tradeStatus,
+          attemptNo: attemptNo ?? null,
+          error: this.toErrorMessage(error, "stripe notify processing failed"),
+          failedAt: new Date().toISOString()
+        }
+      });
+      throw error;
+    }
+  }
+
   private async upsertChannelEventLog(
     input: {
       channel: string;
@@ -331,6 +436,36 @@ export class NotifyService {
     );
   }
 
+  private async findStripeAttemptForNotify(
+    event: ProviderNotifyResult
+  ): Promise<PayAttempt | null> {
+    if (event.attemptNo) {
+      const attempt = await this.paymentAttemptService.findAttemptByAttemptNo(
+        event.attemptNo
+      );
+
+      if (attempt && attempt.platformOrderNo === event.platformOrderNo) {
+        return attempt;
+      }
+    }
+
+    if (event.channelRequestNo) {
+      const attempt = await this.paymentAttemptService.findAttemptByChannelRequestNo(
+        event.channelRequestNo
+      );
+
+      if (attempt && attempt.platformOrderNo === event.platformOrderNo) {
+        return attempt;
+      }
+    }
+
+    return this.findAttemptForNotify(
+      event.platformOrderNo,
+      event.channelTradeNo,
+      ["stripe_checkout"]
+    );
+  }
+
   private resolveAlipayChannelEventId(payload: Record<string, unknown>): string {
     const eventId = this.asOptionalString(payload.notify_id ?? payload.notifyId);
 
@@ -347,6 +482,24 @@ export class NotifyService {
   }
 
   private resolveWechatPayChannelEventId(
+    payload: Record<string, unknown> | null,
+    rawBody: string
+  ): string {
+    const eventId = this.asOptionalString(payload?.id);
+
+    if (eventId) {
+      return eventId;
+    }
+
+    const payloadDigest = createHash("sha256")
+      .update(rawBody)
+      .digest("hex")
+      .slice(0, 24);
+
+    return `missing:${payloadDigest}`;
+  }
+
+  private resolveStripeChannelEventId(
     payload: Record<string, unknown> | null,
     rawBody: string
   ): string {

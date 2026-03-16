@@ -98,9 +98,6 @@ export function NotificationsPage() {
           <Typography.Title level={3} style={{ marginTop: 0 }}>
             通知任务
           </Typography.Title>
-          <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
-            商户回调已经接入真实 `notify_task` 表，支持自动重试、死信留存和后台手动补发。
-          </Typography.Paragraph>
         </div>
         {error ? (
           <Alert type="error" showIcon message="通知任务加载失败" description={error} />

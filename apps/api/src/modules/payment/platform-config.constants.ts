@@ -283,12 +283,22 @@ export const PLATFORM_CONFIG_GROUPS: PlatformConfigGroupDefinition[] = [
   {
     key: "stripe",
     label: "Stripe 配置",
-    description: "当前仅需平台侧 Secret Key。",
+    description:
+      "首期按 Hosted Checkout 接入，至少需要服务端 Secret Key 和 webhook signing secret。",
     items: [
       {
         key: "STRIPE_SECRET_KEY",
         label: "Secret Key",
         description: "Stripe 平台分配的服务端密钥。",
+        secret: true,
+        inputType: "PASSWORD",
+        placeholder: "已配置时不会回显，重新输入会覆盖当前数据库配置"
+      },
+      {
+        key: "STRIPE_WEBHOOK_SECRET",
+        label: "Webhook Signing Secret",
+        description:
+          "Stripe Webhook Endpoint 对应的签名密钥，通常以 whsec_ 开头。",
         secret: true,
         inputType: "PASSWORD",
         placeholder: "已配置时不会回显，重新输入会覆盖当前数据库配置"

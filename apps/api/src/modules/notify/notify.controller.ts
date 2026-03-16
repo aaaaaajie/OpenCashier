@@ -51,4 +51,34 @@ export class NotifyController {
       });
     }
   }
+
+  @Post("stripe")
+  async handleStripeNotify(
+    @Req() request: RequestWithContext,
+    @Res() response: Response
+  ) {
+    try {
+      const rawBody = request.rawBody?.toString("utf8");
+
+      if (!rawBody) {
+        throw new BadRequestException("missing raw body for stripe notify");
+      }
+
+      await this.notifyService.handleStripeNotify({
+        headers: request.headers,
+        body: rawBody
+      });
+      response.status(200).json({
+        received: true
+      });
+    } catch (error) {
+      const isBadRequest = error instanceof BadRequestException;
+
+      response.status(isBadRequest ? 400 : 500).json({
+        code: "FAIL",
+        message:
+          error instanceof Error && error.message ? error.message : "stripe notify failed"
+      });
+    }
+  }
 }

@@ -15,19 +15,20 @@
     "prisma:studio": "prisma studio --schema prisma/schema.prisma"
   },
   "dependencies": {
-    "@payment-platform/wechatpay-sdk": "workspace:*",
-    "alipay-sdk": "^4.3.0",
     "@nestjs/common": "^11.1.6",
     "@nestjs/config": "^4.0.2",
     "@nestjs/core": "^11.1.6",
     "@nestjs/platform-express": "^11.1.6",
     "@nestjs/schedule": "^6.0.0",
     "@nestjs/swagger": "^11.2.0",
+    "@payment-platform/wechatpay-sdk": "workspace:*",
     "@prisma/client": "^6.16.2",
+    "alipay-sdk": "^4.3.0",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.2",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.2",
+    "stripe": "^20.4.1",
     "swagger-ui-express": "^5.0.1"
   },
   "devDependencies": {

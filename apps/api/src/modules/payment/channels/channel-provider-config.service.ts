@@ -31,6 +31,7 @@ type AlipayProviderConfig = AlipayKeyProviderConfig | AlipayCertProviderConfig;
 
 interface StripeProviderConfig {
   secretKey?: string;
+  webhookSecret?: string;
 }
 
 interface PaypalProviderConfig {
@@ -205,12 +206,33 @@ export class ChannelProviderConfigService {
   }
 
   hasStripeConfig(): boolean {
-    return Boolean(this.getStripeConfig().secretKey);
+    const config = this.getStripeConfig();
+    return Boolean(config.secretKey && config.webhookSecret);
   }
 
   getStripeConfig(): StripeProviderConfig {
     return {
-      secretKey: this.resolveTextConfig("STRIPE_SECRET_KEY")
+      secretKey: this.resolveTextConfig("STRIPE_SECRET_KEY"),
+      webhookSecret: this.resolveTextConfig("STRIPE_WEBHOOK_SECRET")
+    };
+  }
+
+  getStripeClientConfig(): { secretKey: string; webhookSecret: string } {
+    const config = this.getStripeConfig();
+    const requiredKeys = [
+      !config.secretKey ? "STRIPE_SECRET_KEY" : undefined,
+      !config.webhookSecret ? "STRIPE_WEBHOOK_SECRET" : undefined
+    ].filter((item): item is string => Boolean(item));
+
+    if (requiredKeys.length > 0) {
+      throw new BadRequestException(
+        `missing stripe configuration: ${requiredKeys.join(", ")}`
+      );
+    }
+
+    return {
+      secretKey: config.secretKey!,
+      webhookSecret: config.webhookSecret!
     };
   }
 

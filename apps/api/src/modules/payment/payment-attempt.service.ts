@@ -14,6 +14,7 @@ interface CreateAttemptInput {
 }
 
 interface MarkAttemptReadyInput {
+  channelRequestNo?: string;
   channelTradeNo?: string;
   qrContent?: string;
   payUrl?: string;
@@ -28,6 +29,7 @@ interface MarkAttemptFailedInput {
 }
 
 interface MarkAttemptSuccessInput {
+  channelRequestNo?: string;
   channelTradeNo?: string;
   successTime?: string;
   channelPayload?: Record<string, unknown>;
@@ -86,10 +88,27 @@ export class PaymentAttemptService {
     });
   }
 
+  async findAttemptByAttemptNo(attemptNo: string): Promise<PayAttempt | null> {
+    return this.prismaService.payAttempt.findUnique({
+      where: { attemptNo }
+    });
+  }
+
   async findAttemptByChannelTradeNo(channelTradeNo: string): Promise<PayAttempt | null> {
     return this.prismaService.payAttempt.findFirst({
       where: {
         channelTradeNo
+      },
+      orderBy: { createdAt: "desc" }
+    });
+  }
+
+  async findAttemptByChannelRequestNo(
+    channelRequestNo: string
+  ): Promise<PayAttempt | null> {
+    return this.prismaService.payAttempt.findFirst({
+      where: {
+        channelRequestNo
       },
       orderBy: { createdAt: "desc" }
     });
@@ -116,6 +135,7 @@ export class PaymentAttemptService {
       where: { attemptNo },
       data: {
         status: PayAttemptStatus.USER_PAYING,
+        channelRequestNo: input.channelRequestNo,
         channelTradeNo: input.channelTradeNo,
         qrContent: input.qrContent,
         payUrl: input.payUrl,
@@ -152,6 +172,7 @@ export class PaymentAttemptService {
       where: { attemptNo },
       data: {
         status: PayAttemptStatus.SUCCESS,
+        channelRequestNo: input.channelRequestNo,
         channelTradeNo: input.channelTradeNo,
         successTime: input.successTime ? new Date(input.successTime) : new Date(),
         channelPayload: input.channelPayload

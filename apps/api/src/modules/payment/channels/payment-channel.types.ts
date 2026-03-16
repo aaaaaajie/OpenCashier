@@ -32,6 +32,7 @@ export interface ChannelSessionPreviewInput {
   description?: string;
   notifyUrl: string;
   returnUrl?: string;
+  cancelUrl?: string;
   expireTime: string;
   channel: string;
   attemptNo?: string;
@@ -53,6 +54,7 @@ export interface StoredChannelAttempt {
 export interface ChannelOrderQueryInput {
   platformOrderNo: string;
   channel: string;
+  channelRequestNo?: string | null;
   channelTradeNo?: string | null;
 }
 
@@ -67,6 +69,7 @@ export interface ChannelOrderQueryResult {
 export interface ChannelOrderCloseInput {
   platformOrderNo: string;
   channel: string;
+  channelRequestNo?: string | null;
   channelTradeNo?: string | null;
 }
 
@@ -98,6 +101,8 @@ export interface ChannelRefundResult {
 export interface ProviderNotifyResult {
   eventId: string;
   platformOrderNo: string;
+  attemptNo?: string;
+  channelRequestNo?: string;
   channelTradeNo?: string;
   tradeStatus: ChannelTradeStatus;
   paidAmount?: number;

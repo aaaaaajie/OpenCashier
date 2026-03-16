@@ -97,6 +97,7 @@ const DEFAULT_ALLOWED_CHANNELS = [
   "alipay_page",
   "alipay_wap"
 ];
+const MIN_STRIPE_ORDER_EXPIRE_SECONDS = 60 * 60;
 const REFUNDABLE_ORDER_STATUSES: PrismaOrderStatus[] = [
   PrismaOrderStatus.SUCCESS,
   PrismaOrderStatus.REFUND_PART,
@@ -147,6 +148,10 @@ export class PaymentStoreService implements OnModuleInit {
       merchantApp.allowedChannels,
       input.allowedChannels
     );
+    const expireInSeconds = this.resolveEffectiveExpireInSeconds(
+      input.expireInSeconds,
+      allowedChannels
+    );
 
     this.paymentChannelRegistryService.validateChannels(allowedChannels);
     const orderUniqueWhere = {
@@ -169,7 +174,7 @@ export class PaymentStoreService implements OnModuleInit {
     }
 
     const now = new Date();
-    const expireTime = new Date(now.getTime() + input.expireInSeconds * 1000);
+    const expireTime = new Date(now.getTime() + expireInSeconds * 1000);
 
     try {
       const created = await this.prismaService.payOrder.create({
@@ -322,6 +327,7 @@ export class PaymentStoreService implements OnModuleInit {
       const closeResult = await this.paymentChannelRegistryService.closeOrder({
         platformOrderNo,
         channel: latestAttempt.channel,
+        channelRequestNo: latestAttempt.channelRequestNo,
         channelTradeNo: latestAttempt.channelTradeNo
       });
 
@@ -805,6 +811,7 @@ export class PaymentStoreService implements OnModuleInit {
     const queryResult = await this.paymentChannelRegistryService.queryOrder({
       platformOrderNo: order.platformOrderNo,
       channel: latestAttempt.channel,
+      channelRequestNo: latestAttempt.channelRequestNo,
       channelTradeNo: latestAttempt.channelTradeNo
     });
 
@@ -870,7 +877,13 @@ export class PaymentStoreService implements OnModuleInit {
           status: PrismaMerchantStatus.ACTIVE,
           signType: PrismaSignType.HMAC_SHA256,
           secretCiphertext: "demo_app_secret",
-          allowedChannels: ["wechat_qr", "alipay_qr", "alipay_page", "alipay_wap"]
+          allowedChannels: [
+            "wechat_qr",
+            "alipay_qr",
+            "alipay_page",
+            "alipay_wap",
+            "stripe_checkout"
+          ]
         },
         create: {
           merchantId: merchant.id,
@@ -879,7 +892,13 @@ export class PaymentStoreService implements OnModuleInit {
           status: PrismaMerchantStatus.ACTIVE,
           signType: PrismaSignType.HMAC_SHA256,
           secretCiphertext: "demo_app_secret",
-          allowedChannels: ["wechat_qr", "alipay_qr", "alipay_page", "alipay_wap"]
+          allowedChannels: [
+            "wechat_qr",
+            "alipay_qr",
+            "alipay_page",
+            "alipay_wap",
+            "stripe_checkout"
+          ]
         }
       });
 
@@ -1152,6 +1171,20 @@ export class PaymentStoreService implements OnModuleInit {
         "merchant_order_no already exists with different parameters"
       );
     }
+  }
+
+  private resolveEffectiveExpireInSeconds(
+    requestedExpireInSeconds: number,
+    allowedChannels: string[]
+  ): number {
+    if (!allowedChannels.includes("stripe_checkout")) {
+      return requestedExpireInSeconds;
+    }
+
+    // Stripe Checkout sessions require at least a 30-minute remaining lifetime.
+    // Keep a larger platform-side buffer so users can still open the cashier after
+    // order creation without immediately failing to create the Stripe session.
+    return Math.max(requestedExpireInSeconds, MIN_STRIPE_ORDER_EXPIRE_SECONDS);
   }
 
   private assertSameRefundRequest(

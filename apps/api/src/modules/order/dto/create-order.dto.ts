@@ -48,11 +48,11 @@ export class CreateOrderDto {
   @IsUrl()
   returnUrl?: string;
 
-  @ApiPropertyOptional({ example: 900, minimum: 60, maximum: 1800 })
+  @ApiPropertyOptional({ example: 3600, minimum: 60, maximum: 86400 })
   @IsOptional()
   @IsInt()
   @Min(60)
-  @Max(1800)
+  @Max(86400)
   expireInSeconds?: number;
 
   @ApiPropertyOptional({

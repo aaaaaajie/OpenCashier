@@ -310,7 +310,8 @@ export class CashierService {
         subject: order.subject,
         description: order.description,
         notifyUrl: this.resolveProviderNotifyUrl(channel, order.notifyUrl),
-        returnUrl: order.returnUrl,
+        returnUrl: this.resolveChannelReturnUrl(order, channel, "success"),
+        cancelUrl: this.resolveChannelReturnUrl(order, channel, "cancel"),
         expireTime: order.expireTime,
         channel,
         attemptNo: attempt.attemptNo
@@ -318,6 +319,7 @@ export class CashierService {
 
       if (session.sessionStatus === "READY") {
         await this.paymentAttemptService.markAttemptReady(attempt.attemptNo, {
+          channelRequestNo: session.channelRequestNo,
           channelTradeNo: session.channelTradeNo,
           qrContent: session.qrContent,
           payUrl: session.payUrl,
@@ -455,6 +457,42 @@ export class CashierService {
       this.platformConfigService.get("WEB_BASE_URL") ?? "http://localhost:5173";
 
     return `${webBaseUrl.replace(/\/$/, "")}/cashier/${cashierToken}`;
+  }
+
+  private resolveChannelReturnUrl(
+    order: Awaited<ReturnType<PaymentStoreService["getOrderByPlatformOrderNo"]>>,
+    channel: string,
+    result: "success" | "cancel"
+  ): string | undefined {
+    if (result === "success" && order.returnUrl?.trim()) {
+      return order.returnUrl.trim();
+    }
+
+    const cashierToken = this.extractCashierToken(order.cashierUrl);
+
+    if (!cashierToken) {
+      return order.returnUrl?.trim() || order.cashierUrl;
+    }
+
+    const providerCode =
+      this.paymentChannelRegistryService.getCatalogByChannel(channel)?.providerCode ??
+      channel;
+    const webUrl = new URL(this.buildCashierWebUrl(cashierToken));
+
+    webUrl.searchParams.set("selectedProvider", providerCode);
+    webUrl.searchParams.set("providerReturn", result);
+
+    return webUrl.toString();
+  }
+
+  private extractCashierToken(cashierUrl: string): string | undefined {
+    try {
+      const pathname = new URL(cashierUrl).pathname;
+
+      return pathname.split("/").filter(Boolean).at(-1);
+    } catch {
+      return cashierUrl.split("?")[0]?.split("/").filter(Boolean).at(-1);
+    }
   }
 
   private countDistinctProviders(

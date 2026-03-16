@@ -16,9 +16,6 @@ export function RefundsPage() {
       <Typography.Title level={3} style={{ marginTop: 0 }}>
         退款单
       </Typography.Title>
-      <Typography.Paragraph type="secondary">
-        一期先具备列表和状态承载能力，后续接真实退款查询和多次部分退款规则。
-      </Typography.Paragraph>
       <Table
         rowKey="merchantRefundNo"
         dataSource={data}

@@ -10,7 +10,7 @@ import {
   Typography
 } from "antd";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useParams, useSearchParams } from "react-router-dom";
 
 interface CashierOrder {
   platformOrderNo: string;
@@ -334,11 +334,16 @@ function renderProviderIcon(channel: CashierChannel) {
 
 export function CashierPage() {
   const { cashierToken } = useParams();
+  const [searchParams] = useSearchParams();
   const terminal = useMemo(() => detectCashierTerminal(), []);
   const tokenPayload = useMemo(
     () => parseCashierTokenPayload(cashierToken),
     [cashierToken]
   );
+  const preferredProviderFromQuery = searchParams.get("selectedProvider")?.trim() || null;
+  const providerReturn = searchParams.get("providerReturn")?.trim() || null;
+  const suppressAutoRedirect =
+    providerReturn === "cancel" || providerReturn === "success";
   const fallbackOrder = useMemo<CashierOrder>(
     () => ({
       platformOrderNo: tokenPayload?.platformOrderNo ?? cashierToken ?? "",
@@ -373,7 +378,7 @@ export function CashierPage() {
     setLoading(true);
     setError(null);
     redirectedPayUrlRef.current = null;
-  }, [cashierToken]);
+  }, [cashierToken, preferredProviderFromQuery, providerReturn]);
 
   useEffect(() => {
     if (!cashierToken) {
@@ -449,7 +454,15 @@ export function CashierPage() {
     return () => {
       cancelled = true;
     };
-  }, [cashierToken, reloadKey, terminal, tokenExpired, tokenPayload]);
+  }, [
+    cashierToken,
+    preferredProviderFromQuery,
+    providerReturn,
+    reloadKey,
+    terminal,
+    tokenExpired,
+    tokenPayload
+  ]);
 
   const orderInfo = cashierState?.order ?? fallbackOrder;
   const returnUrl = orderInfo.returnUrl?.trim();
@@ -466,6 +479,13 @@ export function CashierPage() {
     }
 
     setSelectedProvider((current) => {
+      if (
+        preferredProviderFromQuery &&
+        providerOptions.some((option) => option.key === preferredProviderFromQuery)
+      ) {
+        return preferredProviderFromQuery;
+      }
+
       if (providerOptions.length === 1) {
         return providerOptions[0]?.key ?? null;
       }
@@ -476,7 +496,7 @@ export function CashierPage() {
 
       return null;
     });
-  }, [providerOptions]);
+  }, [preferredProviderFromQuery, providerOptions]);
 
   const selectedProviderOption =
     providerOptions.find((option) => option.key === selectedProvider) ??
@@ -539,6 +559,11 @@ export function CashierPage() {
       return;
     }
 
+    if (suppressAutoRedirect) {
+      redirectedPayUrlRef.current = redirectUrl;
+      return;
+    }
+
     redirectedPayUrlRef.current = redirectUrl;
 
     const timer = window.setTimeout(() => {
@@ -548,7 +573,7 @@ export function CashierPage() {
     return () => {
       window.clearTimeout(timer);
     };
-  }, [redirectUrl, hasMultipleProviders, selectedProvider]);
+  }, [redirectUrl, hasMultipleProviders, selectedProvider, suppressAutoRedirect]);
 
   if (!cashierToken) {
     return (
@@ -769,15 +794,30 @@ export function CashierPage() {
                 selectedChannel.actionType === "REDIRECT_URL" &&
                 redirectUrl ? (
                 <Space direction="vertical" size={12} className="cashier-panel-content">
-                  <Spin />
+                  {suppressAutoRedirect ? (
+                    <Alert
+                      type="info"
+                      showIcon
+                      message={`已从${resolveProviderName(selectedChannel)}返回`}
+                      description="如果你已经完成支付，请等待页面自动刷新；如果需要继续付款，可以再次点击下方按钮。"
+                    />
+                  ) : (
+                    <Spin />
+                  )}
                   <Typography.Title level={4} style={{ margin: 0 }}>
-                    正在跳转到{resolveProviderName(selectedChannel)}
+                    {suppressAutoRedirect
+                      ? `等待${resolveProviderName(selectedChannel)}支付结果`
+                      : `正在跳转到${resolveProviderName(selectedChannel)}`}
                   </Typography.Title>
                   <Typography.Text type="secondary">
-                    {resolveRedirectDescription(selectedChannel)}
+                    {suppressAutoRedirect
+                      ? "平台已暂停自动跳转，避免你从支付页返回后再次进入同一个支付会话。"
+                      : resolveRedirectDescription(selectedChannel)}
                   </Typography.Text>
                   <Button type="primary" onClick={() => window.location.replace(redirectUrl)}>
-                    立即前往{resolveProviderName(selectedChannel)}
+                    {suppressAutoRedirect
+                      ? `重新前往${resolveProviderName(selectedChannel)}`
+                      : `立即前往${resolveProviderName(selectedChannel)}`}
                   </Button>
                 </Space>
               ) : (

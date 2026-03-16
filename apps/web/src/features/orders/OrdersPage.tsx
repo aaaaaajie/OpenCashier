@@ -28,9 +28,6 @@ export function OrdersPage() {
             <Typography.Title level={3} style={{ marginTop: 0 }}>
               支付订单
             </Typography.Title>
-            <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
-              当前是运营台骨架。后续这里会接真实查询、关单、补偿和审计能力。
-            </Typography.Paragraph>
           </div>
           <Button type="primary">创建测试订单</Button>
         </div>

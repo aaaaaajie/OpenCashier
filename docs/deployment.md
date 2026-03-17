@@ -53,6 +53,14 @@
 - `postgres`
   - 存储订单、退款、通知和平台配置数据
 
+OpenCashier 内部容器之间使用唯一内部主机名通信：
+
+- `opencashier-web`
+- `opencashier-api`
+- `opencashier-postgres`
+
+这样可以避免与共享 Docker 网络中的其他项目服务名发生冲突。
+
 对外访问地址统一如下：
 
 - 管理后台：`https://pay.example.com/`
@@ -115,6 +123,8 @@ APP_BASE_URL=https://pay.example.com
 WEB_BASE_URL=https://pay.example.com
 APP_API_BASE_URL=/api/v1
 ```
+
+默认内置 PostgreSQL 的连接地址由部署编排自动生成，主机名固定为 `opencashier-postgres`。仅在接入外部数据库时，才需要显式设置 `DATABASE_URL`。
 
 ## 7. 方案 A：直接部署
 

@@ -3,6 +3,10 @@ services:
   postgres:
     image: postgres:16
     restart: unless-stopped
+    networks:
+      default:
+        aliases:
+          - opencashier-postgres
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-cashier}
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
@@ -34,7 +38,7 @@ services:
       PLATFORM_CONFIG_MASTER_KEY: ${PLATFORM_CONFIG_MASTER_KEY:?PLATFORM_CONFIG_MASTER_KEY is required}
       APP_BASE_URL: ${APP_BASE_URL:?APP_BASE_URL is required}
       WEB_BASE_URL: ${WEB_BASE_URL:?WEB_BASE_URL is required}
-      DATABASE_URL: ${DATABASE_URL:-postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-cashier}?schema=public}
+      DATABASE_URL: ${DATABASE_URL:-postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@opencashier-postgres:5432/${POSTGRES_DB:-cashier}?schema=public}
       SKIP_PRISMA_DB_PUSH: ${SKIP_PRISMA_DB_PUSH:-0}
     healthcheck:
       test:

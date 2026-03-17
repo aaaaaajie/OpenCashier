@@ -21,7 +21,7 @@
   - 适用于所有服务器部署场景
 - `docker-compose.deploy.reverse-proxy.yml`
   - 反向代理扩展编排文件
-  - 为 `web` 容器追加外部 Docker 网络与网络别名
+  - 为 `web`、`api` 容器追加外部 Docker 网络与网络别名
   - 仅在现有网关本身也运行于 Docker 时使用
 - `.env.deploy.example`
   - 部署环境变量模板
@@ -161,6 +161,7 @@ docker compose --env-file .env.deploy -f docker-compose.deploy.yml logs -f
 WEB_PUBLISHED_BIND=127.0.0.1
 WEB_PUBLISHED_PORT=18080
 OPENCASHIER_REVERSE_PROXY_NETWORK=xxx
+OPENCASHIER_API_NETWORK_ALIAS=opencashier-api
 OPENCASHIER_WEB_NETWORK_ALIAS=opencashier-web
 ```
 
@@ -172,6 +173,8 @@ OPENCASHIER_WEB_NETWORK_ALIAS=opencashier-web
   - 宿主机本地转发端口
 - `OPENCASHIER_REVERSE_PROXY_NETWORK`
   - 现有 Docker 网关所在的外部网络名称
+- `OPENCASHIER_API_NETWORK_ALIAS`
+  - 现有 Docker 网关访问 OpenCashier `api` 的上游名称
 - `OPENCASHIER_WEB_NETWORK_ALIAS`
   - 现有网关访问 OpenCashier `web` 的上游名称
 
@@ -205,15 +208,63 @@ docker compose --env-file .env.deploy \
 
 ### 8.5 现有网关的反向代理要求
 
-现有网关的目标上游应指向 `OPENCASHIER_WEB_NETWORK_ALIAS`，而不是 OpenCashier `api` 容器。
+对 Dockerized 网关，推荐在 `cashier` 站点内直接分流：
 
-原因如下：
+- `/` 转发到 `OPENCASHIER_WEB_NETWORK_ALIAS`
+- `/api/` 转发到 `OPENCASHIER_API_NETWORK_ALIAS`
 
-- OpenCashier `web` 已负责前端静态资源
-- OpenCashier `web` 已负责 SPA 路由回退
-- OpenCashier `web` 已负责将 `/api/*` 转发到 `api`
+推荐原因如下：
 
-因此，主网关只需要将整个站点流量转发到 OpenCashier `web`。
+- `cashier.linkmind.site` 站点下的 `/` 和 `/api/` 都直接归属 OpenCashier
+- API 少经过一次 `web -> api` 转发
+- 共享 Docker 网络时，不会与其他项目里的通用服务名 `api`、`web` 冲突
+- 主网关层可以清晰表达同一二级域名下的前端与 API 路由归属
+
+示例 Nginx 配置如下：
+
+```nginx
+upstream opencashier_web {
+    least_conn;
+    server opencashier-web:80 max_fails=3 fail_timeout=30s;
+    keepalive 16;
+}
+
+upstream opencashier_api {
+    least_conn;
+    server opencashier-api:3000 max_fails=3 fail_timeout=30s;
+    keepalive 16;
+}
+
+server {
+    listen 443 ssl http2;
+    server_name cashier.example.com;
+
+    ssl_certificate /etc/nginx/ssl/cashier-fullchain.pem;
+    ssl_certificate_key /etc/nginx/ssl/cashier-privkey.pem;
+
+    location /api/ {
+        proxy_pass http://opencashier_api;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location / {
+        proxy_pass http://opencashier_web;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+```
+
+对于宿主机 Nginx，或不希望拆分 `/` 和 `/api/` 的场景，仍可将整个站点统一转发到 `web`。此时 OpenCashier `web` 会继续在内部将 `/api/*` 转发到 `api`。
 
 ## 9. 升级
 

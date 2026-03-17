@@ -1,0 +1,14 @@
+# Additional network attachment for deployments behind an existing
+# Dockerized reverse proxy such as Nginx, Caddy, or Traefik.
+services:
+  web:
+    networks:
+      default:
+      reverse-proxy:
+        aliases:
+          - ${OPENCASHIER_WEB_NETWORK_ALIAS:-opencashier-web}
+
+networks:
+  reverse-proxy:
+    external: true
+    name: ${OPENCASHIER_REVERSE_PROXY_NETWORK:?OPENCASHIER_REVERSE_PROXY_NETWORK is required}

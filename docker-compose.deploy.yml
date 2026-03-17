@@ -22,7 +22,7 @@ services:
       retries: 10
 
   api:
-    image: ${OPENCASHIER_REGISTRY:-ghcr.io}/${OPENCASHIER_NAMESPACE:-aaaaaajie}/opencashier-api:${OPENCASHIER_IMAGE_TAG:-main}
+    image: ${OPENCASHIER_REGISTRY:-ghcr.io}/${OPENCASHIER_NAMESPACE:-aaaaaajie}/opencashier-api:${OPENCASHIER_IMAGE_TAG:-latest}
     pull_policy: always
     restart: unless-stopped
     depends_on:
@@ -50,7 +50,7 @@ services:
       retries: 10
 
   web:
-    image: ${OPENCASHIER_REGISTRY:-ghcr.io}/${OPENCASHIER_NAMESPACE:-aaaaaajie}/opencashier-web:${OPENCASHIER_IMAGE_TAG:-main}
+    image: ${OPENCASHIER_REGISTRY:-ghcr.io}/${OPENCASHIER_NAMESPACE:-aaaaaajie}/opencashier-web:${OPENCASHIER_IMAGE_TAG:-latest}
     pull_policy: always
     restart: unless-stopped
     depends_on:
@@ -59,7 +59,7 @@ services:
     environment:
       APP_API_BASE_URL: ${APP_API_BASE_URL:-/api/v1}
     ports:
-      - "${WEB_PUBLISHED_PORT:-80}:80"
+      - "${WEB_PUBLISHED_BIND:-0.0.0.0}:${WEB_PUBLISHED_PORT:-80}:80"
     healthcheck:
       test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/ || exit 1"]
       interval: 15s

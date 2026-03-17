@@ -1,6 +1,11 @@
 # 镜像部署指南
 
-本文档定义 OpenCashier 基于官方容器镜像的标准部署方式。部署入口覆盖服务器安装、版本升级和版本回滚。
+本文档定义 OpenCashier 基于官方容器镜像的标准部署方式。标准部署支持两种模式：
+
+- 方案 A：直接部署
+- 方案 B：接入现有反向代理
+
+两种方案共用同一套镜像、同一份基础编排文件和同一套版本标签策略。差异只在公网入口和 Docker 网络接入方式。
 
 ## 1. 文件职责
 
@@ -9,24 +14,37 @@
 - `docker-compose.infrastructure.yml`
   - 本地开发基础设施
   - 仅启动 PostgreSQL 和 Redis
-  - 用于源码开发、联调和测试
+  - 不用于服务器部署
 - `docker-compose.deploy.yml`
-  - 镜像部署入口
+  - 镜像部署基础编排文件
   - 启动 `web`、`api` 和 `postgres`
-  - 用于服务器部署、升级和回滚
+  - 适用于所有服务器部署场景
+- `docker-compose.deploy.reverse-proxy.yml`
+  - 反向代理扩展编排文件
+  - 为 `web` 容器追加外部 Docker 网络与网络别名
+  - 仅在现有网关本身也运行于 Docker 时使用
 - `.env.deploy.example`
-  - `docker-compose.deploy.yml` 对应的环境变量模板
+  - 部署环境变量模板
 
-`docker-compose.infrastructure.yml` 不参与服务器部署。服务器部署统一使用 `docker-compose.deploy.yml`。
+## 2. 选择部署模式
 
-## 2. 部署拓扑
+部署模式按服务器入口结构选择：
+
+| 场景 | 使用方式 |
+| --- | --- |
+| 独立部署 OpenCashier，由 OpenCashier 自己占用公网端口 | 方案 A：直接部署 |
+| 服务器已存在 Nginx、Caddy、Traefik 或其他网关，需要共用 `80/443` | 方案 B：接入现有反向代理 |
+
+反向代理不是默认前提。对首次验证、独立部署、单系统部署，直接使用方案 A 即可。
+
+## 3. 部署拓扑
 
 标准部署拓扑包含三个容器：
 
 - `web`
-  - 对外暴露 HTTP 端口
   - 托管前端静态资源
-  - 反向代理 `/api/*` 到 `api`
+  - 作为 OpenCashier 的 Web 入口
+  - 将 `/api/*` 转发到 `api`
 - `api`
   - 提供 Merchant API
   - 提供管理后台 API
@@ -35,26 +53,32 @@
 - `postgres`
   - 存储订单、退款、通知和平台配置数据
 
-对外只暴露 `web` 容器端口。默认访问地址如下：
+对外访问地址统一如下：
 
 - 管理后台：`https://pay.example.com/`
 - Merchant API：`https://pay.example.com/api/v1`
 - Swagger：`https://pay.example.com/api/docs`
 - 托管收银台：`https://pay.example.com/api/cashier/{cashierToken}`
 
-## 3. 运行要求
+## 4. 运行要求
 
-部署环境要求如下：
+基础要求如下：
 
 - Docker Engine
 - Docker Compose v2
 - Linux 服务器
 - 公网域名
-- 80 / 443 端口可用
 
-HTTPS 终止层由上游反向代理或负载均衡承担。常见实现包括 Nginx、Caddy、Traefik 或云厂商负载均衡。
+方案 A 额外要求：
 
-## 4. 镜像标签策略
+- OpenCashier 可直接占用一个公网监听端口
+
+方案 B 额外要求：
+
+- 现有反向代理已可提供公网入口
+- 现有反向代理与 OpenCashier 可加入同一个 Docker 网络
+
+## 5. 镜像标签策略
 
 镜像标签分为三类：
 
@@ -62,17 +86,17 @@ HTTPS 终止层由上游反向代理或负载均衡承担。常见实现包括 N
 - 正式版本标签：`v0.1.0`
 - 稳定别名标签：`latest`
 
-部署环境通过 `OPENCASHIER_IMAGE_TAG` 选择镜像版本。默认部署使用显式版本标签，例如 `v0.1.0`。版本回滚通过回退 `OPENCASHIER_IMAGE_TAG` 完成。
+部署环境通过 `OPENCASHIER_IMAGE_TAG` 选择镜像版本。部署使用显式版本标签，例如 `v0.1.0-beta.1` 或 `v0.1.0`。回滚通过回退 `OPENCASHIER_IMAGE_TAG` 完成。
 
-## 5. 首次部署
+## 6. 通用准备
 
-### 5.1 复制部署环境变量
+### 6.1 复制部署环境变量
 
 ```bash
 cp .env.deploy.example .env.deploy
 ```
 
-### 5.2 设置必填变量
+### 6.2 设置必填变量
 
 首次部署前完成以下变量配置：
 
@@ -82,80 +106,143 @@ cp .env.deploy.example .env.deploy
 - `WEB_BASE_URL`
 - `POSTGRES_PASSWORD`
 
-当前拓扑由 `web` 容器统一对外暴露，`APP_BASE_URL` 与 `WEB_BASE_URL` 使用同一个公网地址：
+标准公网地址配置如下：
 
 ```text
 APP_BASE_URL=https://pay.example.com
 WEB_BASE_URL=https://pay.example.com
+APP_API_BASE_URL=/api/v1
 ```
 
-### 5.3 拉取镜像并启动服务
+## 7. 方案 A：直接部署
+
+本方案由 OpenCashier 自己对外暴露 `web` 端口。适用于独立服务器、独立域名或首次快速部署验证。
+
+### 7.1 推荐环境变量
+
+```text
+WEB_PUBLISHED_BIND=0.0.0.0
+WEB_PUBLISHED_PORT=80
+```
+
+### 7.2 启动服务
 
 ```bash
 docker compose --env-file .env.deploy -f docker-compose.deploy.yml pull
 docker compose --env-file .env.deploy -f docker-compose.deploy.yml up -d
 ```
 
-### 5.4 检查服务状态
+### 7.3 检查状态
 
 ```bash
 docker compose --env-file .env.deploy -f docker-compose.deploy.yml ps
-```
-
-### 5.5 查看服务日志
-
-```bash
 docker compose --env-file .env.deploy -f docker-compose.deploy.yml logs -f
 ```
 
-## 6. 升级
+## 8. 方案 B：接入现有反向代理
 
-### 6.1 升级到预发布版本
+本方案适用于服务器已存在统一公网入口，OpenCashier 作为一个额外站点或子域名接入现有网关。
 
-`.env.deploy` 中设置预发布标签：
+### 8.1 适用前提
+
+本方案要求现有反向代理满足以下条件：
+
+- 反向代理本身运行在 Docker 中
+- 反向代理与 OpenCashier 可以加入同一个外部 Docker 网络
+- 反向代理使用网络别名访问 OpenCashier `web` 容器
+
+如果现有反向代理直接运行在宿主机，而不是 Docker 容器内，应在主反向代理中直接转发到 `127.0.0.1:${WEB_PUBLISHED_PORT}`，无需使用 `docker-compose.deploy.reverse-proxy.yml`。
+
+### 8.2 推荐环境变量
 
 ```text
-OPENCASHIER_IMAGE_TAG=v0.1.0-beta.1
+WEB_PUBLISHED_BIND=127.0.0.1
+WEB_PUBLISHED_PORT=18080
+OPENCASHIER_REVERSE_PROXY_NETWORK=xxx
+OPENCASHIER_WEB_NETWORK_ALIAS=opencashier-web
 ```
 
-执行升级命令：
+变量说明如下：
+
+- `WEB_PUBLISHED_BIND=127.0.0.1`
+  - `web` 仅监听本机，不直接暴露公网端口
+- `WEB_PUBLISHED_PORT=18080`
+  - 宿主机本地转发端口
+- `OPENCASHIER_REVERSE_PROXY_NETWORK`
+  - 现有 Docker 网关所在的外部网络名称
+- `OPENCASHIER_WEB_NETWORK_ALIAS`
+  - 现有网关访问 OpenCashier `web` 的上游名称
+
+### 8.3 启动服务
+
+```bash
+docker compose --env-file .env.deploy \
+  -f docker-compose.deploy.yml \
+  -f docker-compose.deploy.reverse-proxy.yml \
+  pull
+
+docker compose --env-file .env.deploy \
+  -f docker-compose.deploy.yml \
+  -f docker-compose.deploy.reverse-proxy.yml \
+  up -d
+```
+
+### 8.4 检查状态
+
+```bash
+docker compose --env-file .env.deploy \
+  -f docker-compose.deploy.yml \
+  -f docker-compose.deploy.reverse-proxy.yml \
+  ps
+
+docker compose --env-file .env.deploy \
+  -f docker-compose.deploy.yml \
+  -f docker-compose.deploy.reverse-proxy.yml \
+  logs -f
+```
+
+### 8.5 现有网关的反向代理要求
+
+现有网关的目标上游应指向 `OPENCASHIER_WEB_NETWORK_ALIAS`，而不是 OpenCashier `api` 容器。
+
+原因如下：
+
+- OpenCashier `web` 已负责前端静态资源
+- OpenCashier `web` 已负责 SPA 路由回退
+- OpenCashier `web` 已负责将 `/api/*` 转发到 `api`
+
+因此，主网关只需要将整个站点流量转发到 OpenCashier `web`。
+
+## 9. 升级
+
+`.env.deploy` 中更新 `OPENCASHIER_IMAGE_TAG` 后，重新拉取并启动服务。
+
+方案 A：
 
 ```bash
 docker compose --env-file .env.deploy -f docker-compose.deploy.yml pull
 docker compose --env-file .env.deploy -f docker-compose.deploy.yml up -d
 ```
 
-### 6.2 升级到正式版本
-
-`.env.deploy` 中设置正式版本标签：
-
-```text
-OPENCASHIER_IMAGE_TAG=v0.1.0
-```
-
-执行升级命令：
+方案 B：
 
 ```bash
-docker compose --env-file .env.deploy -f docker-compose.deploy.yml pull
-docker compose --env-file .env.deploy -f docker-compose.deploy.yml up -d
+docker compose --env-file .env.deploy \
+  -f docker-compose.deploy.yml \
+  -f docker-compose.deploy.reverse-proxy.yml \
+  pull
+
+docker compose --env-file .env.deploy \
+  -f docker-compose.deploy.yml \
+  -f docker-compose.deploy.reverse-proxy.yml \
+  up -d
 ```
 
-## 7. 回滚
+## 10. 回滚
 
-将 `OPENCASHIER_IMAGE_TAG` 回退到目标版本，例如：
+将 `OPENCASHIER_IMAGE_TAG` 回退到目标版本后，按当前部署模式重新执行 `pull` 和 `up -d`。
 
-```text
-OPENCASHIER_IMAGE_TAG=v0.1.0
-```
-
-重新拉取并启动：
-
-```bash
-docker compose --env-file .env.deploy -f docker-compose.deploy.yml pull
-docker compose --env-file .env.deploy -f docker-compose.deploy.yml up -d
-```
-
-## 8. 数据库
+## 11. 数据库
 
 默认部署文件内置 PostgreSQL，并通过命名卷 `postgres-data` 持久化数据。该结构适用于单机部署和标准镜像部署路径。
 
@@ -165,9 +252,9 @@ docker compose --env-file .env.deploy -f docker-compose.deploy.yml up -d
 DATABASE_URL=postgresql://user:password@db.example.com:5432/cashier?schema=public
 ```
 
-接入外部数据库后，`docker-compose.deploy.yml` 可按实际拓扑移除 `postgres` 服务。
+接入外部数据库后，可按实际拓扑移除 `postgres` 服务。
 
-## 9. 数据库结构同步
+## 12. 数据库结构同步
 
 API 容器启动时默认执行：
 
@@ -181,7 +268,7 @@ prisma db push
 SKIP_PRISMA_DB_PUSH=1
 ```
 
-## 10. 前端 API 运行时配置
+## 13. 前端 API 运行时配置
 
 `web` 容器默认使用以下运行时配置：
 
@@ -195,7 +282,7 @@ APP_API_BASE_URL=/api/v1
 APP_API_BASE_URL=https://another-host.example.com/api/v1
 ```
 
-## 11. 镜像发布
+## 14. 镜像发布
 
 镜像发布目标为 GitHub Container Registry：
 

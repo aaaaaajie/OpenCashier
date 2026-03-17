@@ -9,7 +9,7 @@ import {
   message
 } from "antd";
 import { useCallback, useEffect, useState } from "react";
-import { getApiBaseUrl } from "../../config/runtime-config";
+import { fetchAdminJson } from "../admin/admin-api";
 
 const statusColorMap: Record<string, string> = {
   SUCCESS: "green",
@@ -40,17 +40,16 @@ export function NotificationsPage() {
   const [retryingId, setRetryingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<NotificationTask[]>([]);
-  const apiBaseUrl = getApiBaseUrl();
 
   const loadTasks = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
 
-      const response = await fetch(`${apiBaseUrl}/admin/notifications`);
-      const json = (await response.json()) as { data: NotificationTask[] };
-
-      setData(json.data);
+      const nextTasks = await fetchAdminJson<NotificationTask[]>(
+        "/admin/notifications"
+      );
+      setData(nextTasks);
     } catch (caught) {
       setError(
         caught instanceof Error ? caught.message : "Failed to load notify tasks"
@@ -58,7 +57,7 @@ export function NotificationsPage() {
     } finally {
       setLoading(false);
     }
-  }, [apiBaseUrl]);
+  }, []);
 
   useEffect(() => {
     void loadTasks();
@@ -68,16 +67,9 @@ export function NotificationsPage() {
     try {
       setRetryingId(notifyId);
 
-      const response = await fetch(
-        `${apiBaseUrl}/admin/notifications/${notifyId}/retry`,
-        {
-          method: "POST"
-        }
-      );
-
-      if (!response.ok) {
-        throw new Error(`Retry request failed with status ${response.status}`);
-      }
+      await fetchAdminJson<null>(`/admin/notifications/${notifyId}/retry`, {
+        method: "POST"
+      });
 
       messageApi.success("通知任务已重新投递");
       await loadTasks();

@@ -1,6 +1,6 @@
 import { Alert, Card, Space, Table, Tag, Typography } from "antd";
 import { useCallback, useEffect, useState } from "react";
-import { getApiBaseUrl } from "../../config/runtime-config";
+import { fetchAdminJson } from "../admin/admin-api";
 
 const statusColorMap: Record<string, string> = {
   CREATED: "default",
@@ -36,21 +36,14 @@ export function RefundsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<RefundRecord[]>([]);
-  const apiBaseUrl = getApiBaseUrl();
 
   const loadRefunds = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
 
-      const response = await fetch(`${apiBaseUrl}/admin/refunds`);
-
-      if (!response.ok) {
-        throw new Error(`Refund list request failed with status ${response.status}`);
-      }
-
-      const json = (await response.json()) as { data: RefundRecord[] };
-      setData(json.data);
+      const nextRefunds = await fetchAdminJson<RefundRecord[]>("/admin/refunds");
+      setData(nextRefunds);
     } catch (caught) {
       setError(
         caught instanceof Error ? caught.message : "Failed to load refund orders"
@@ -58,7 +51,7 @@ export function RefundsPage() {
     } finally {
       setLoading(false);
     }
-  }, [apiBaseUrl]);
+  }, []);
 
   useEffect(() => {
     void loadRefunds();

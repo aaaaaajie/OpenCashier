@@ -80,7 +80,9 @@ sequenceDiagram
 - 平台 API 根地址，例如 `https://pay.example.com/api/v1`
 - 商户应用允许使用的渠道列表，例如 `alipay_qr`、`alipay_page`、`alipay_wap`、`stripe_checkout`
 
-本地联调时，仓库默认内置两个 HMAC 示例应用：
+推荐做法不是把预置 demo app 直接发给商户，而是由平台管理员在后台“商户应用”页，或通过管理员 API `POST /api/v1/admin/merchants` 创建商户应用，然后把返回的 `appId`、`appSecret` 和 API 根地址发给商户。
+
+本地联调时，如果环境变量启用了 `ENABLE_DEMO_DATA=1`，仓库会自动生成两个 HMAC 示例应用：
 
 - `demo_app` / `demo_app_secret`
 - `demo_app_other` / `demo_app_other_secret`
@@ -120,6 +122,8 @@ sequenceDiagram
 - Swagger：`http://localhost:3000/api/docs`
 - Hosted cashier entry：`http://localhost:3000/api/cashier/{cashierToken}`
 - Web：`http://localhost:5173`
+
+部署完成后，也可以直接在后台“商户应用”页复制 API 根地址和 Swagger 地址，不需要自己猜平台 API path。
 
 ## 3. 响应格式与认证约定
 
@@ -281,6 +285,14 @@ export function signMerchantRequest({ method, path, appId, timestamp, nonce, bod
 - 相同 `Idempotency-Key` + 相同请求参数：返回相同结果
 - 相同 `Idempotency-Key` + 不同请求参数：返回 `IDEMPOTENT_CONFLICT`
 - 相同 `X-Nonce` 重复使用：返回 `NONCE_REPLAY`
+
+推荐生成规则：
+
+- 创建订单：`order:{merchantOrderNo}:create`
+- 关闭订单：`order:{platformOrderNo}:close`
+- 创建退款：`refund:{merchantRefundNo}:create`
+
+建议把“动作名 + 业务主键”拼进 key 中，而不是每次都生成一个完全无语义的随机串。这样业务重试时可以稳定复用同一个 key，也方便排查问题。
 
 ## 5. 标准接入流程
 
@@ -735,7 +747,20 @@ success
 - 商户侧 smoke 测试脚本：`pnpm smoke:merchant`
 - 如果要做本地支付宝联调，需要使用公网 HTTPS 隧道暴露平台回调地址
 
-### 8.3 上线前检查清单
+### 8.3 新手最常问的问题
+
+- 部署到公网后，后台是不是任何人都能改配置？
+  不是。`/api/v1/admin/*` 需要管理员认证；没有管理员凭据时，后台页面拿不到配置、订单和商户应用数据。
+- `allowedChannels` 应该传什么？
+  传支付意图，而不是按钮列表。比如“支付宝支付”建议直接传 `["alipay_qr", "alipay_page", "alipay_wap"]`。
+- 根平台 API path 去哪看？
+  后台“商户应用”页会直接显示 Merchant API 根地址；部署层面就是 `APP_BASE_URL + /api/v1`。
+- `appId` / `appSecret` 应该怎么给商户？
+  推荐由管理员创建商户应用，再把创建结果发给商户，而不是依赖预置 demo 应用。
+- `notifyUrl` 成功回包要返回什么？
+  返回 HTTP `2xx`，并且响应体必须是纯文本 `success`。
+
+### 8.4 上线前检查清单
 
 - 已正确实现请求签名与通知验签
 - 已对写接口使用唯一的 `Idempotency-Key`

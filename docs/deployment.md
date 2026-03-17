@@ -114,6 +114,8 @@ cp .env.deploy.example .env.deploy
 - `PLATFORM_CONFIG_MASTER_KEY`
 - `APP_BASE_URL`
 - `WEB_BASE_URL`
+- `ADMIN_USERNAME`
+- `ADMIN_PASSWORD`
 - `POSTGRES_PASSWORD`
 
 标准公网地址配置如下：
@@ -122,9 +124,28 @@ cp .env.deploy.example .env.deploy
 APP_BASE_URL=https://pay.example.com
 WEB_BASE_URL=https://pay.example.com
 APP_API_BASE_URL=/api/v1
+ADMIN_USERNAME=admin
+ADMIN_PASSWORD=replace-with-a-strong-admin-password
+ENABLE_DEMO_DATA=0
 ```
 
 默认内置 PostgreSQL 的连接地址由部署编排自动生成，主机名固定为 `opencashier-postgres`。仅在接入外部数据库时，才需要显式设置 `DATABASE_URL`。
+
+### 6.3 后台访问安全
+
+OpenCashier 现在明确区分公开支付入口和后台管理入口：
+
+- `/api/cashier/*` 和商户自己的签名 API 对外开放
+- `/api/v1/admin/*` 必须通过管理员认证
+- Web 管理后台会先检查管理员会话，没有管理员凭据时无法读取或修改配置
+
+如果没有配置 `ADMIN_USERNAME` 和 `ADMIN_PASSWORD`，API 会直接拒绝启动；本地和生产环境使用同一套管理员认证逻辑。
+
+如果你不希望线上生成预置 demo 商户，请保持：
+
+```text
+ENABLE_DEMO_DATA=0
+```
 
 ## 7. 方案 A：直接部署
 
@@ -344,6 +365,8 @@ APP_API_BASE_URL=/api/v1
 ```text
 APP_API_BASE_URL=https://another-host.example.com/api/v1
 ```
+
+部署完成后，管理员也可以直接在后台“商户应用”页查看并复制 Merchant API 根地址和 Swagger 地址，无需再自己推导 API path。
 
 ## 14. 镜像发布
 

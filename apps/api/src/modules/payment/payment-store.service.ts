@@ -5,6 +5,7 @@ import {
   NotFoundException,
   OnModuleInit
 } from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
 import {
   BusinessType,
   MerchantStatus as PrismaMerchantStatus,
@@ -112,6 +113,7 @@ const ACTIVE_REFUND_STATUSES: PrismaRefundStatus[] = [
 @Injectable()
 export class PaymentStoreService implements OnModuleInit {
   constructor(
+    private readonly configService: ConfigService,
     private readonly prismaService: PrismaService,
     private readonly platformConfigService: PlatformConfigService,
     private readonly paymentChannelRegistryService: PaymentChannelRegistryService,
@@ -119,6 +121,10 @@ export class PaymentStoreService implements OnModuleInit {
   ) {}
 
   async onModuleInit(): Promise<void> {
+    if (!this.isDemoDataEnabled()) {
+      return;
+    }
+
     await this.ensureDemoData();
   }
 
@@ -903,27 +909,6 @@ export class PaymentStoreService implements OnModuleInit {
       });
 
       await tx.merchantApp.upsert({
-        where: { appId: "partner_app" },
-        update: {
-          merchantId: merchant.id,
-          appName: "渠道联调应用",
-          status: PrismaMerchantStatus.ACTIVE,
-          signType: PrismaSignType.RSA2,
-          secretCiphertext: "partner_app_secret",
-          allowedChannels: ["wechat_qr"]
-        },
-        create: {
-          merchantId: merchant.id,
-          appId: "partner_app",
-          appName: "渠道联调应用",
-          status: PrismaMerchantStatus.ACTIVE,
-          signType: PrismaSignType.RSA2,
-          secretCiphertext: "partner_app_secret",
-          allowedChannels: ["wechat_qr"]
-        }
-      });
-
-      await tx.merchantApp.upsert({
         where: { appId: "demo_app_other" },
         update: {
           merchantId: merchant.id,
@@ -1018,6 +1003,16 @@ export class PaymentStoreService implements OnModuleInit {
         }
       });
     });
+  }
+
+  private isDemoDataEnabled(): boolean {
+    const rawValue = this.configService.get<string>("ENABLE_DEMO_DATA")?.trim();
+
+    if (!rawValue) {
+      return false;
+    }
+
+    return ["1", "true", "yes", "on"].includes(rawValue.toLowerCase());
   }
 
   private async markExpiredOrders(): Promise<void> {

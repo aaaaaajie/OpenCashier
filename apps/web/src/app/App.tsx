@@ -7,6 +7,10 @@ import {
 } from "react-router-dom";
 import { AdminLayout } from "./AdminLayout";
 import { CashierPage } from "../features/cashier/CashierPage";
+import {
+  AdminSessionProvider,
+  RequireAdminSession
+} from "../features/admin/AdminSessionContext";
 import { DashboardPage } from "../features/dashboard/DashboardPage";
 import { MerchantAppsPage } from "../features/merchants/MerchantAppsPage";
 import { NotificationsPage } from "../features/notifications/NotificationsPage";
@@ -26,20 +30,29 @@ export function App() {
       }}
     >
       <AntdApp>
-        <BrowserRouter>
-          <Routes>
-            <Route path="/cashier/:cashierToken" element={<CashierPage />} />
-            <Route path="/" element={<AdminLayout />}>
-              <Route index element={<Navigate to="/dashboard" replace />} />
-              <Route path="dashboard" element={<DashboardPage />} />
-              <Route path="merchants" element={<MerchantAppsPage />} />
-              <Route path="orders" element={<OrdersPage />} />
-              <Route path="refunds" element={<RefundsPage />} />
-              <Route path="notifications" element={<NotificationsPage />} />
-              <Route path="settings" element={<SettingsPage />} />
-            </Route>
-          </Routes>
-        </BrowserRouter>
+        <AdminSessionProvider>
+          <BrowserRouter>
+            <Routes>
+              <Route path="/cashier/:cashierToken" element={<CashierPage />} />
+              <Route
+                path="/"
+                element={
+                  <RequireAdminSession>
+                    <AdminLayout />
+                  </RequireAdminSession>
+                }
+              >
+                <Route index element={<Navigate to="/dashboard" replace />} />
+                <Route path="dashboard" element={<DashboardPage />} />
+                <Route path="merchants" element={<MerchantAppsPage />} />
+                <Route path="orders" element={<OrdersPage />} />
+                <Route path="refunds" element={<RefundsPage />} />
+                <Route path="notifications" element={<NotificationsPage />} />
+                <Route path="settings" element={<SettingsPage />} />
+              </Route>
+            </Routes>
+          </BrowserRouter>
+        </AdminSessionProvider>
       </AntdApp>
     </ConfigProvider>
   );

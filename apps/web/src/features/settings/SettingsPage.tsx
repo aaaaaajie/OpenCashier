@@ -25,6 +25,7 @@ import {
   Tooltip,
   Typography,
 } from "antd";
+import { fetchAdminJson } from "../admin/admin-api";
 import { getApiBaseUrl } from "../../config/runtime-config";
 
 type ProviderCatalogItem = {
@@ -631,28 +632,13 @@ export function SettingsPage() {
     setLoading(true);
 
     try {
-      const [providersResponse, configsResponse] = await Promise.all([
-        fetch(`${apiBaseUrl}/admin/channels`),
-        fetch(`${apiBaseUrl}/admin/platform-configs`),
+      const [providerList, configList] = await Promise.all([
+        fetchAdminJson<ProviderCatalogItem[]>("/admin/channels"),
+        fetchAdminJson<PlatformConfigRecord[]>("/admin/platform-configs"),
       ]);
 
-      const providersJson = (await providersResponse.json()) as ApiEnvelope<
-        ProviderCatalogItem[]
-      >;
-      const configsJson = (await configsResponse.json()) as ApiEnvelope<
-        PlatformConfigRecord[]
-      >;
-
-      if (!providersResponse.ok) {
-        throw new Error(providersJson.message || "加载渠道列表失败");
-      }
-
-      if (!configsResponse.ok) {
-        throw new Error(configsJson.message || "加载平台配置失败");
-      }
-
-      setProviders(providersJson.data);
-      setConfigRecords(configsJson.data);
+      setProviders(providerList);
+      setConfigRecords(configList);
     } catch (error) {
       setProviders([]);
       setConfigRecords([]);
@@ -808,23 +794,13 @@ export function SettingsPage() {
 
       setModalSaving(true);
 
-      const response = await fetch(`${apiBaseUrl}/admin/platform-configs`, {
+      await fetchAdminJson<PlatformConfigRecord[]>("/admin/platform-configs", {
         method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-        },
         body: JSON.stringify({
           key: groupKey,
           value: patchValue,
         }),
       });
-      const json = (await response.json()) as ApiEnvelope<
-        PlatformConfigRecord[] | null
-      >;
-
-      if (!response.ok) {
-        throw new Error(json.message || "保存平台配置失败");
-      }
 
       messageApi.success(
         `${targetGroup.label}草稿已保存，请回到表格点击“生效”后再应用到真实支付流程`,
@@ -870,34 +846,23 @@ export function SettingsPage() {
 
       setModalValidating(true);
 
-      const response = await fetch(
-        `${apiBaseUrl}/admin/platform-configs/${groupKey}/validate`,
+      const result = await fetchAdminJson<ProviderConfigValidationResult>(
+        `/admin/platform-configs/${groupKey}/validate`,
         {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
           body: JSON.stringify({
             value: patchValue,
           }),
-        },
+        }
       );
-      const json = (await response.json()) as ApiEnvelope<
-        ProviderConfigValidationResult
-      >;
+      setModalValidationResult(result);
 
-      if (!response.ok) {
-        throw new Error(json.message || `验证 ${targetGroup.label} 配置失败`);
-      }
-
-      setModalValidationResult(json.data);
-
-      if (json.data.status === "SUCCESS") {
+      if (result.status === "SUCCESS") {
         messageApi.success(`${targetGroup.label}配置验证通过`);
         return;
       }
 
-      if (json.data.status === "UNSUPPORTED") {
+      if (result.status === "UNSUPPORTED") {
         messageApi.info(`${targetGroup.label}暂不支持在线验证，可以直接保存草稿`);
       }
     } catch (error) {
@@ -915,19 +880,12 @@ export function SettingsPage() {
     setDeletingGroupKey(row.groupKey);
 
     try {
-      const response = await fetch(
-        `${apiBaseUrl}/admin/platform-configs/${row.groupKey}`,
+      await fetchAdminJson<PlatformConfigRecord[]>(
+        `/admin/platform-configs/${row.groupKey}`,
         {
           method: "DELETE",
-        },
+        }
       );
-      const json = (await response.json()) as ApiEnvelope<
-        PlatformConfigRecord[] | null
-      >;
-
-      if (!response.ok) {
-        throw new Error(json.message || `删除配置 ${row.groupKey} 失败`);
-      }
 
       messageApi.success(`${row.displayName} 配置已删除`);
       await loadSettings();
@@ -952,19 +910,12 @@ export function SettingsPage() {
         setActivatingGroupKey(row.groupKey);
 
         try {
-          const response = await fetch(
-            `${apiBaseUrl}/admin/platform-configs/${row.groupKey}/activate`,
+          await fetchAdminJson<PlatformConfigRecord[]>(
+            `/admin/platform-configs/${row.groupKey}/activate`,
             {
               method: "POST",
-            },
+            }
           );
-          const json = (await response.json()) as ApiEnvelope<
-            PlatformConfigRecord[] | null
-          >;
-
-          if (!response.ok) {
-            throw new Error(json.message || `生效 ${row.displayName} 配置失败`);
-          }
 
           messageApi.success(`${row.displayName}配置已生效`);
           await loadSettings();

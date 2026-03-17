@@ -1,6 +1,6 @@
 import { Alert, Button, Card, Space, Table, Tag, Typography } from "antd";
 import { useCallback, useEffect, useState } from "react";
-import { getApiBaseUrl } from "../../config/runtime-config";
+import { fetchAdminJson } from "../admin/admin-api";
 
 const statusColorMap: Record<string, string> = {
   WAIT_PAY: "blue",
@@ -47,21 +47,14 @@ export function OrdersPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<OrderRecord[]>([]);
-  const apiBaseUrl = getApiBaseUrl();
 
   const loadOrders = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
 
-      const response = await fetch(`${apiBaseUrl}/admin/orders`);
-
-      if (!response.ok) {
-        throw new Error(`Order list request failed with status ${response.status}`);
-      }
-
-      const json = (await response.json()) as { data: OrderRecord[] };
-      setData(json.data);
+      const nextOrders = await fetchAdminJson<OrderRecord[]>("/admin/orders");
+      setData(nextOrders);
     } catch (caught) {
       setError(
         caught instanceof Error ? caught.message : "Failed to load pay orders"
@@ -69,7 +62,7 @@ export function OrdersPage() {
     } finally {
       setLoading(false);
     }
-  }, [apiBaseUrl]);
+  }, []);
 
   useEffect(() => {
     void loadOrders();

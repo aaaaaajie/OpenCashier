@@ -1,10 +1,29 @@
-import { Body, Controller, Delete, Get, Param, Post, Put } from "@nestjs/common";
-import { ApiOperation, ApiParam, ApiTags } from "@nestjs/swagger";
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Post,
+  Put,
+  UseGuards
+} from "@nestjs/common";
+import {
+  ApiBasicAuth,
+  ApiCookieAuth,
+  ApiOperation,
+  ApiParam,
+  ApiTags
+} from "@nestjs/swagger";
+import { AdminSessionGuard } from "../../common/guards/admin-session.guard";
 import { AdminService } from "./admin.service";
 import { UpsertPlatformConfigDto } from "./dto/upsert-platform-config.dto";
 import { ValidatePlatformConfigDto } from "./dto/validate-platform-config.dto";
 
 @ApiTags("admin")
+@ApiBasicAuth("admin-basic")
+@ApiCookieAuth("opencashier_admin_session")
+@UseGuards(AdminSessionGuard)
 @Controller("v1/admin")
 export class AdminController {
   constructor(private readonly adminService: AdminService) {}

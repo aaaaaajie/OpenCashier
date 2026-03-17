@@ -9,6 +9,7 @@ import {
   Statistic,
   Table,
 } from "antd";
+import { fetchAdminJson } from "../admin/admin-api";
 import { getApiBaseUrl } from "../../config/runtime-config";
 
 interface DashboardState {
@@ -54,19 +55,16 @@ export function DashboardPage() {
   useEffect(() => {
     async function load() {
       try {
-        const [healthResponse, summaryResponse] = await Promise.all([
+        const [healthResponse, summaryData] = await Promise.all([
           fetch(`${apiBaseUrl}/health`),
-          fetch(`${apiBaseUrl}/admin/summary`)
+          fetchAdminJson<DashboardState>("/admin/summary")
         ]);
         const healthJson = (await healthResponse.json()) as {
           data: Record<string, string>;
         };
-        const summaryJson = (await summaryResponse.json()) as {
-          data: DashboardState;
-        };
 
         setHealth(healthJson.data);
-        setDashboard(summaryJson.data);
+        setDashboard(summaryData);
       } catch (caught) {
         setError(
           caught instanceof Error ? caught.message : "Failed to load dashboard"

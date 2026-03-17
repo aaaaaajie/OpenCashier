@@ -7,14 +7,15 @@ import {
   ShoppingCartOutlined
 } from "@ant-design/icons";
 import {
+  Button,
   Breadcrumb,
   Layout,
   Menu,
   Space,
-  Tag,
   Typography
 } from "antd";
 import { Link, Outlet, useLocation } from "react-router-dom";
+import { useAdminSession } from "../features/admin/AdminSessionContext";
 
 const { Header, Sider, Content } = Layout;
 
@@ -62,10 +63,12 @@ const breadcrumbTitleMap: Record<string, string> = {
 
 export function AdminLayout() {
   const location = useLocation();
+  const { username, logout } = useAdminSession();
 
   return (
-    <Layout style={{ minHeight: "100vh" }}>
+    <Layout style={{ minHeight: "100vh", height: "100vh" }}>
       <Sider
+        className="admin-sider"
         breakpoint="lg"
         collapsedWidth={72}
         width={240}
@@ -82,17 +85,35 @@ export function AdminLayout() {
           </Typography.Title>
         </div>
         <Menu
+          className="admin-sider-menu"
           theme="dark"
           mode="inline"
           selectedKeys={[location.pathname]}
           items={menuItems}
         />
+        <div
+          className="admin-sider-footer"
+          style={{
+            padding: 16,
+            borderTop: "1px solid rgba(148,163,184,0.16)"
+          }}
+        >
+          <Space direction="vertical" size={10} style={{ width: "100%" }}>
+            {username ? (
+              <Typography.Text style={{ color: "rgba(255,255,255,0.72)" }}>
+                {username}
+              </Typography.Text>
+            ) : null}
+            <Button block onClick={() => void logout()}>
+              退出登录
+            </Button>
+          </Space>
+        </div>
       </Sider>
-      <Layout>
+      <Layout style={{ minWidth: 0, minHeight: 0 }}>
         <Header
           style={{
             display: "flex",
-            justifyContent: "space-between",
             alignItems: "center",
             background: "rgba(255,255,255,0.8)",
             backdropFilter: "blur(12px)",
@@ -111,7 +132,14 @@ export function AdminLayout() {
             />
           </Space>
         </Header>
-        <Content style={{ padding: 24 }}>
+        <Content
+          style={{
+            flex: 1,
+            minHeight: 0,
+            padding: 24,
+            overflowY: "auto"
+          }}
+        >
           <Outlet />
         </Content>
       </Layout>

@@ -63,7 +63,14 @@ pnpm prisma:db:push
 pnpm dev
 ```
 
-6. 跑商户侧 smoke 测试
+6. 登录后台并确认商户应用
+
+- 管理后台：`http://localhost:5173`
+- 默认管理员账号：`admin`
+- 默认管理员密码：`local-dev-admin-password`
+- `.env.example` 默认开启 `ENABLE_DEMO_DATA=1`，因此本地会自动生成 `demo_app`
+
+7. 跑商户侧 smoke 测试
 
 ```bash
 pnpm smoke:merchant

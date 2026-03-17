@@ -18,13 +18,17 @@ COPY . .
 RUN pnpm install --frozen-lockfile
 RUN pnpm --filter @opencashier/api prisma:generate
 RUN pnpm --filter @opencashier/api build
+RUN pnpm --filter @opencashier/api --prod deploy /prod/api
 
 FROM base AS runner
 
 ENV NODE_ENV=production
 ENV APP_PORT=3000
 
-COPY --from=build /app /app
+COPY --from=build /prod/api /app
+COPY --from=build /app/docker/api/start.sh /app/docker/api/start.sh
+
+RUN chmod +x /app/docker/api/start.sh
 
 EXPOSE 3000
 

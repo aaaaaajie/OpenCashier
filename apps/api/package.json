@@ -2,6 +2,10 @@
   "name": "@opencashier/api",
   "version": "0.1.0",
   "private": true,
+  "files": [
+    "dist",
+    "prisma"
+  ],
   "scripts": {
     "predev": "pnpm --filter @opencashier/wechatpay-sdk build",
     "dev": "nest start --watch",
@@ -24,6 +28,7 @@
     "@nestjs/swagger": "^11.2.0",
     "@opencashier/wechatpay-sdk": "workspace:*",
     "@prisma/client": "^6.16.2",
+    "prisma": "^6.16.2",
     "alipay-sdk": "^4.3.0",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.2",
@@ -37,7 +42,6 @@
     "@nestjs/testing": "^11.1.6",
     "@types/express": "^5.0.3",
     "@types/node": "^22.18.1",
-    "prisma": "^6.16.2",
     "ts-node": "^10.9.2",
     "tsconfig-paths": "^4.2.0",
     "typescript": "^5.8.3"

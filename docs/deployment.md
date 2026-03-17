@@ -88,6 +88,8 @@
 
 部署环境通过 `OPENCASHIER_IMAGE_TAG` 选择镜像版本。部署使用显式版本标签，例如 `v0.1.0-beta.1` 或 `v0.1.0`。回滚通过回退 `OPENCASHIER_IMAGE_TAG` 完成。
 
+标准部署编排文件默认不设置 `pull_policy: always`。日常执行 `docker compose up -d` 不会强制回源检查镜像；首次部署、升级和回滚时，显式执行一次 `docker compose pull` 即可。
+
 ## 6. 通用准备
 
 ### 6.1 复制部署环境变量
@@ -284,7 +286,7 @@ APP_API_BASE_URL=https://another-host.example.com/api/v1
 
 ## 14. 镜像发布
 
-镜像发布目标为 GitHub Container Registry：
+默认镜像发布目标为 GitHub Container Registry：
 
 - `ghcr.io/<owner>/opencashier-api`
 - `ghcr.io/<owner>/opencashier-web`
@@ -296,3 +298,39 @@ APP_API_BASE_URL=https://another-host.example.com/api/v1
 - 稳定版本 tag 额外生成 `latest`
 
 自动发布流程定义在 `.github/workflows/publish-images.yml`。
+
+### 14.1 可选的国内镜像源
+
+工作流支持在发布到 GHCR 的同时，额外推送到一个可选镜像仓库。该镜像仓库可用于中国大陆服务器部署，例如阿里云 ACR 个人版。
+
+配置方式如下：
+
+- GitHub Actions Variables
+  - `MIRROR_REGISTRY`
+    - 例如 `registry.cn-hangzhou.aliyuncs.com`
+  - `MIRROR_NAMESPACE`
+    - 例如 `your-namespace`
+- GitHub Actions Secrets
+  - `MIRROR_REGISTRY_USERNAME`
+  - `MIRROR_REGISTRY_PASSWORD`
+
+当以上变量和 Secrets 全部存在时，每次 `v*` tag 发布会同时推送：
+
+- `ghcr.io/<owner>/opencashier-api`
+- `ghcr.io/<owner>/opencashier-web`
+- `<MIRROR_REGISTRY>/<MIRROR_NAMESPACE>/opencashier-api`
+- `<MIRROR_REGISTRY>/<MIRROR_NAMESPACE>/opencashier-web`
+
+如果未配置镜像仓库变量或 Secrets，工作流会继续只发布到 GHCR。
+
+### 14.2 国内服务器部署
+
+国内服务器如果优先使用国内镜像仓库，在 `.env.deploy` 中改为对应 registry 和 namespace：
+
+```text
+OPENCASHIER_REGISTRY=registry.cn-hangzhou.aliyuncs.com
+OPENCASHIER_NAMESPACE=your-namespace
+OPENCASHIER_IMAGE_TAG=v0.1.0
+```
+
+若需要回退到 GHCR，只需将 `OPENCASHIER_REGISTRY` 和 `OPENCASHIER_NAMESPACE` 改回默认值。

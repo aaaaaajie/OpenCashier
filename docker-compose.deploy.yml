@@ -23,7 +23,6 @@ services:
 
   api:
     image: ${OPENCASHIER_REGISTRY:-ghcr.io}/${OPENCASHIER_NAMESPACE:-aaaaaajie}/opencashier-api:${OPENCASHIER_IMAGE_TAG:-latest}
-    pull_policy: always
     restart: unless-stopped
     depends_on:
       postgres:
@@ -51,7 +50,6 @@ services:
 
   web:
     image: ${OPENCASHIER_REGISTRY:-ghcr.io}/${OPENCASHIER_NAMESPACE:-aaaaaajie}/opencashier-web:${OPENCASHIER_IMAGE_TAG:-latest}
-    pull_policy: always
     restart: unless-stopped
     depends_on:
       api:

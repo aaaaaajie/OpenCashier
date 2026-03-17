@@ -12,6 +12,12 @@ permissions:
 jobs:
   publish-images:
     runs-on: ubuntu-latest
+    env:
+      MIRROR_REGISTRY: ${{ vars.MIRROR_REGISTRY }}
+      MIRROR_NAMESPACE: ${{ vars.MIRROR_NAMESPACE }}
+      MIRROR_REGISTRY_USERNAME: ${{ secrets.MIRROR_REGISTRY_USERNAME }}
+      MIRROR_REGISTRY_PASSWORD: ${{ secrets.MIRROR_REGISTRY_PASSWORD }}
+      MIRROR_ENABLED: ${{ vars.MIRROR_REGISTRY != '' && vars.MIRROR_NAMESPACE != '' && secrets.MIRROR_REGISTRY_USERNAME != '' && secrets.MIRROR_REGISTRY_PASSWORD != '' }}
     strategy:
       matrix:
         include:
@@ -34,12 +40,12 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Log in to mirror registry
-        if: ${{ vars.MIRROR_REGISTRY != '' && vars.MIRROR_NAMESPACE != '' && secrets.MIRROR_REGISTRY_USERNAME != '' && secrets.MIRROR_REGISTRY_PASSWORD != '' }}
+        if: ${{ env.MIRROR_ENABLED == 'true' }}
         uses: docker/login-action@v3
         with:
-          registry: ${{ vars.MIRROR_REGISTRY }}
-          username: ${{ secrets.MIRROR_REGISTRY_USERNAME }}
-          password: ${{ secrets.MIRROR_REGISTRY_PASSWORD }}
+          registry: ${{ env.MIRROR_REGISTRY }}
+          username: ${{ env.MIRROR_REGISTRY_USERNAME }}
+          password: ${{ env.MIRROR_REGISTRY_PASSWORD }}
 
       - name: Docker metadata
         id: meta
@@ -47,7 +53,7 @@ jobs:
         with:
           images: |
             name=ghcr.io/${{ github.repository_owner }}/opencashier-${{ matrix.service }}
-            name=${{ vars.MIRROR_REGISTRY }}/${{ vars.MIRROR_NAMESPACE }}/opencashier-${{ matrix.service }},enable=${{ vars.MIRROR_REGISTRY != '' && vars.MIRROR_NAMESPACE != '' && secrets.MIRROR_REGISTRY_USERNAME != '' && secrets.MIRROR_REGISTRY_PASSWORD != '' }}
+            name=${{ env.MIRROR_REGISTRY }}/${{ env.MIRROR_NAMESPACE }}/opencashier-${{ matrix.service }},enable=${{ env.MIRROR_ENABLED == 'true' }}
           tags: |
             type=ref,event=tag
             type=sha,prefix=sha-

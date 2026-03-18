@@ -12,6 +12,7 @@ packages/*/dist
 apps/api/dist
 apps/api/generated
 apps/api/prisma/dev.db
+examples/*/data/*.json
 plan*
 skills
 .codex

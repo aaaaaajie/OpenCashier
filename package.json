@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "pnpm --parallel --filter @opencashier/api --filter @opencashier/web dev",
     "dev:api": "pnpm --filter @opencashier/api dev",
+    "dev:merchant-quickstart": "pnpm --filter @opencashier/merchant-quickstart dev",
     "dev:web": "pnpm --filter @opencashier/web dev",
     "build": "pnpm -r build",
     "typecheck": "pnpm -r typecheck",

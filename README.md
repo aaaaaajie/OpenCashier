@@ -71,12 +71,25 @@ pnpm smoke:merchant
 
 For environment setup, local tunnel usage, default endpoints, seeded demo data, and provider-specific keys, use the docs below instead of the README.
 
+## Merchant Quickstart Example
+
+If you want a runnable merchant-side reference instead of the full workspace, try [examples/merchant-quickstart/README.md](./examples/merchant-quickstart/README.md). It shows signed create-order requests, `cashierUrl` redirect, notification verification, and result-page query fallback in one small app.
+
+```bash
+pnpm dev:api
+pnpm dev:merchant-quickstart
+```
+
+Then open `http://127.0.0.1:4100`.
+
 ## Project Layout
 
 ```text
 apps/
   api/   # API
   web/   # Cashier admin management
+examples/
+  merchant-quickstart/  # Runnable merchant-side integration reference
 packages/
   shared/        # Shared types and constants
   wechatpay-sdk  # WeChat Pay SDK wrapper
@@ -88,6 +101,7 @@ skills/
 
 - Deployment guide (Chinese): [docs/deployment.md](./docs/deployment.md)
 - Merchant integration guide (Chinese): [docs/merchant-api-integration.md](./docs/merchant-api-integration.md)
+- Merchant quickstart example: [examples/merchant-quickstart/README.md](./examples/merchant-quickstart/README.md)
 
 Most deep-dive docs are currently Chinese-first. English and bilingual documentation contributions are welcome.
 

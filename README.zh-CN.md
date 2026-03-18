@@ -78,12 +78,25 @@ pnpm smoke:merchant
 
 环境变量、本地联调、默认地址、seed 数据、支付渠道密钥配置等细节，统一放到下面的文档里，不再堆在首页 README。
 
+## Merchant Quickstart 示例
+
+如果你想先看一份可运行的商户侧参考实现，而不是直接起完整工作区，可以先试 [examples/merchant-quickstart/README.zh-CN.md](./examples/merchant-quickstart/README.zh-CN.md)。这个 example 把签名下单、跳转 `cashierUrl`、通知验签和结果页查单兜底放在了一个小应用里。
+
+```bash
+pnpm dev:api
+pnpm dev:merchant-quickstart
+```
+
+然后打开 `http://127.0.0.1:4100`。
+
 ## 项目结构
 
 ```text
 apps/
   api/   # API
   web/   # 收银管理后台
+examples/
+  merchant-quickstart/  # 可运行的商户侧接入参考
 packages/
   shared/        # 共享类型和常量
   wechatpay-sdk  # 微信支付 SDK 封装
@@ -95,6 +108,7 @@ skills/
 
 - 镜像部署指南: [docs/deployment.md](./docs/deployment.md)
 - 商户接入指南: [docs/merchant-api-integration.md](./docs/merchant-api-integration.md)
+- Merchant Quickstart 示例: [examples/merchant-quickstart/README.zh-CN.md](./examples/merchant-quickstart/README.zh-CN.md)
 
 当前深度文档仍以中文为主；如果你希望补英文文档或双语说明，欢迎直接发 PR。
 

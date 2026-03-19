@@ -1,0 +1,10 @@
+{
+  "title": "release-image-publish",
+  "entries": [
+    {
+      "category": "Fixed",
+      "en": "Fixed the release pipeline so each published tag now creates the GitHub Release and pushes the matching GHCR `opencashier-api` and `opencashier-web` images in one flow, avoiding release and image tag mismatches.",
+      "zh-CN": "修复发布流水线：每个已发布 tag 现在会在同一条流程中创建 GitHub Release，并推送对应的 GHCR `opencashier-api` 与 `opencashier-web` 镜像，避免 release 与镜像 tag 不一致。"
+    }
+  ]
+}

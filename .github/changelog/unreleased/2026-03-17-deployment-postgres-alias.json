@@ -1,0 +1,10 @@
+{
+  "title": "deployment-postgres-alias",
+  "entries": [
+    {
+      "category": "Changed",
+      "en": "The default deployment stack now uses the internal PostgreSQL alias `opencashier-postgres` when the bundled database service is enabled.",
+      "zh-CN": "默认部署栈在启用内置数据库服务时，改为使用内部 PostgreSQL 别名 `opencashier-postgres`。"
+    }
+  ]
+}

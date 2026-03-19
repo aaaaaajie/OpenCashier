@@ -1,0 +1,10 @@
+{
+  "title": "merchant-quickstart",
+  "entries": [
+    {
+      "category": "Added",
+      "en": "Added `examples/merchant-quickstart`, a runnable merchant integration sample that provisions app-scoped provider config, redirects to `cashierUrl`, verifies notifications, and rechecks order status on the result page.",
+      "zh-CN": "新增 `examples/merchant-quickstart`，提供可运行的商户接入示例，覆盖 app 作用域渠道配置初始化、跳转 `cashierUrl`、通知验签以及结果页查单兜底。"
+    }
+  ]
+}

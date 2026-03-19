@@ -109,6 +109,8 @@ skills/
 
 ## 文档
 
+- 变更记录: [CHANGELOG.zh-CN.md](./CHANGELOG.zh-CN.md)
+- ChangeLog 英文版: [CHANGELOG.md](./CHANGELOG.md)
 - 镜像部署指南: [opencashier-docs.vercel.app/zh-CN/deployment](https://opencashier-docs.vercel.app/zh-CN/deployment)
 - 商户接入指南: [opencashier-docs.vercel.app/zh-CN/merchant-api-integration](https://opencashier-docs.vercel.app/zh-CN/merchant-api-integration)
 - Merchant Quickstart 示例: [examples/merchant-quickstart/README.zh-CN.md](./examples/merchant-quickstart/README.zh-CN.md)
@@ -117,7 +119,7 @@ skills/
 
 ## 社区
 
-- 贡献指南: [CONTRIBUTING.md](./.github/CONTRIBUTING.md)
+- 贡献指南: [opencashier-docs.vercel.app/zh-CN/contributing](https://opencashier-docs.vercel.app/zh-CN/contributing)
 - 支持与使用问题: [SUPPORT.md](./.github/SUPPORT.md)
 - 安全漏洞报告: [SECURITY.md](./.github/SECURITY.md)
 - 社区行为准则: [CODE_OF_CONDUCT.md](./.github/CODE_OF_CONDUCT.md)

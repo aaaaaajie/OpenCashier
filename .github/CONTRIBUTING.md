@@ -45,7 +45,7 @@ pnpm dev
 
 - Keep pull requests focused. One PR should solve one problem.
 - Preserve existing provider behavior unless the change explicitly updates that contract.
-- If you change APIs, webhook behavior, auth headers, or order/refund semantics, update the relevant docs in `README.md` or `docs/`.
+- Public root changelog files are release-only. If you change APIs, webhook behavior, auth headers, order/refund semantics, deployment topology, environment variables, provider availability, or other user-visible behavior, add a bilingual fragment under `.github/changelog/unreleased/` instead of editing `CHANGELOG.md` or `CHANGELOG.zh-CN.md` directly.
 - If you change the cashier or admin UI, include screenshots or a short screen recording in the PR.
 - Prefer incremental provider work. A smaller, tested provider step is better than a large unfinished abstraction rewrite.
 
@@ -63,11 +63,20 @@ Additional commands you may need:
 ```bash
 pnpm build
 pnpm test:tunnel
+pnpm changelog:validate
+pnpm changelog:draft
+```
+
+To cut a released changelog entry from pending fragments:
+
+```bash
+pnpm changelog:release -- v0.1.0-beta.5 2026-03-20
 ```
 
 ## Pull request checklist
 
 - The change is scoped and explained clearly.
+- A `.github/changelog/unreleased/*.json` fragment was added when the change affects deployers, integrators, or other external users.
 - Documentation was updated where behavior changed.
 - No secrets, production credentials, or private certificates were added.
 - Relevant commands were run locally, and the results are described in the PR.

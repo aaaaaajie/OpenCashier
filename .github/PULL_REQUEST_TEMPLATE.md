@@ -8,7 +8,13 @@
 - [ ] `pnpm typecheck`
 - [ ] `pnpm smoke:merchant`
 - [ ] `pnpm build`
+- [ ] `pnpm changelog:validate`
 - [ ] Other relevant checks or manual verification are described below
+
+## Changelog
+
+- [ ] Added `.github/changelog/unreleased/<id>.json` for externally visible changes
+- [ ] No external deployer or integrator impact, so no changelog fragment is needed
 
 ## Notes
 

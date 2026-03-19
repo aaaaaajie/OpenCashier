@@ -102,6 +102,8 @@ skills/
 
 ## Documentation
 
+- Changelog: [CHANGELOG.md](./CHANGELOG.md)
+- Changelog (Simplified Chinese): [CHANGELOG.zh-CN.md](./CHANGELOG.zh-CN.md)
 - Deployment guide: [opencashier-docs.vercel.app/en/deployment](https://opencashier-docs.vercel.app/en/deployment)
 - Merchant integration guide: [opencashier-docs.vercel.app/en/merchant-api-integration](https://opencashier-docs.vercel.app/en/merchant-api-integration)
 - Merchant quickstart example: [examples/merchant-quickstart/README.md](./examples/merchant-quickstart/README.md)
@@ -110,7 +112,7 @@ Most deep-dive docs are currently Chinese-first. English and bilingual documenta
 
 ## Community
 
-- Contributing guide: [CONTRIBUTING.md](./.github/CONTRIBUTING.md)
+- Contributing guide: [opencashier-docs.vercel.app/en/contributing](https://opencashier-docs.vercel.app/en/contributing)
 - Support and usage help: [SUPPORT.md](./.github/SUPPORT.md)
 - Security policy: [SECURITY.md](./.github/SECURITY.md)
 - Code of conduct: [CODE_OF_CONDUCT.md](./.github/CODE_OF_CONDUCT.md)

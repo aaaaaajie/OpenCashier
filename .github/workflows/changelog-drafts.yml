@@ -1,0 +1,69 @@
+name: Changelog Drafts
+
+on:
+  pull_request:
+    paths:
+      - ".github/changelog/**"
+      - ".github/CONTRIBUTING.md"
+      - ".github/PULL_REQUEST_TEMPLATE.md"
+      - "scripts/changelog.mjs"
+      - "package.json"
+      - "CHANGELOG.md"
+      - "CHANGELOG.zh-CN.md"
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/changelog/unreleased/**"
+      - "scripts/changelog.mjs"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  validate:
+    if: ${{ github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Validate changelog fragments and drafts
+        run: node scripts/changelog.mjs validate
+
+  sync-drafts:
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && github.actor != 'github-actions[bot]' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Regenerate internal changelog drafts
+        run: node scripts/changelog.mjs draft --write
+
+      - name: Validate generated drafts
+        run: node scripts/changelog.mjs validate
+
+      - name: Commit updated draft files
+        run: |
+          if git diff --quiet -- .github/changelog/DRAFT.md .github/changelog/DRAFT.zh-CN.md; then
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .github/changelog/DRAFT.md .github/changelog/DRAFT.zh-CN.md
+          git commit -m "chore: sync changelog drafts"
+          git push

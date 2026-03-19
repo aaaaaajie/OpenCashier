@@ -1,0 +1,15 @@
+{
+  "title": "admin-auth-and-app-scope",
+  "entries": [
+    {
+      "category": "Added",
+      "en": "Added admin login and session APIs plus a sign-in flow in `apps/web`, with configurable local development credentials.",
+      "zh-CN": "新增管理员登录与会话 API，并在 `apps/web` 中接入登录流程，支持可配置的本地开发账号。"
+    },
+    {
+      "category": "Changed",
+      "en": "Merchant provider configuration can now be managed per app, which removes the need to start `apps/web` for the default `alipay_page` quickstart path.",
+      "zh-CN": "商户渠道配置现在支持按 app 维度管理，默认 `alipay_page` quickstart 路径不再要求先启动 `apps/web`。"
+    }
+  ]
+}

@@ -1,11 +1,8 @@
 {
-  "group": "alipay",
-  "value": {
-    "ALIPAY_AUTH_MODE": "KEY",
-    "ALIPAY_PRODUCT_CAPABILITIES": "PAGE",
-    "ALIPAY_APP_ID": "2021000000000000",
-    "ALIPAY_PRIVATE_KEY": "-----BEGIN PRIVATE KEY-----\\nYOUR_PRIVATE_KEY\\n-----END PRIVATE KEY-----",
-    "ALIPAY_PUBLIC_KEY": "-----BEGIN PUBLIC KEY-----\\nYOUR_ALIPAY_PUBLIC_KEY\\n-----END PUBLIC KEY-----",
-    "ALIPAY_GATEWAY": "https://openapi.alipay.com/gateway.do"
-  }
+  "ALIPAY_AUTH_MODE": "KEY",
+  "ALIPAY_PRODUCT_CAPABILITIES": "PAGE",
+  "ALIPAY_APP_ID": "2021000000000000",
+  "ALIPAY_PRIVATE_KEY": "-----BEGIN PRIVATE KEY-----\\nYOUR_PRIVATE_KEY\\n-----END PRIVATE KEY-----",
+  "ALIPAY_PUBLIC_KEY": "-----BEGIN PUBLIC KEY-----\\nYOUR_ALIPAY_PUBLIC_KEY\\n-----END PUBLIC KEY-----",
+  "ALIPAY_GATEWAY": "https://openapi.alipay.com/gateway.do"
 }

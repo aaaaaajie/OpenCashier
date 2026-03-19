@@ -3,12 +3,13 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "tsx watch src/main.ts",
+    "dev": "pnpm --filter @opencashier/sdk build && tsx watch src/main.ts",
     "build": "tsc -p tsconfig.json",
     "start": "node dist/main.js",
-    "typecheck": "tsc --noEmit -p tsconfig.json"
+    "typecheck": "pnpm --filter @opencashier/sdk build && tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
+    "@opencashier/sdk": "workspace:*",
     "dotenv": "^17.2.3"
   },
   "devDependencies": {

@@ -1,0 +1,4 @@
+interface:
+  display_name: "OpenCashier Integration"
+  short_description: "Integrate an external system with OpenCashier Merchant API"
+  default_prompt: "Use $opencashier-merchant-integration to add OpenCashier order creation, cashierUrl redirect, notification verification, query fallback, and the official Node/TypeScript SDK path into this codebase."

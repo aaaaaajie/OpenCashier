@@ -6,11 +6,11 @@
 
 默认路径覆盖 5 个动作：
 
-- 用商户密钥签名请求
+- 用官方 Node SDK 对商户请求签名
 - 创建订单并拿到 `cashierUrl`
 - 接收并验签 OpenCashier 的商户通知
 - 在结果页主动查单做兜底
-- 可选地在服务启动前准备一份 app-scoped 渠道配置
+- 可选地在服务启动前通过同一个 SDK 准备一份 app-scoped 渠道配置
 
 不包含退款和自定义收银台。
 
@@ -34,6 +34,7 @@ cp examples/merchant-quickstart/.env.example examples/merchant-quickstart/.env
 
 - `.env` 里保留的是最短可跑路径。
 - `provider-config.example.json` 适合多行密钥或证书。
+- `OPENCASHIER_PROVIDER_GROUP` 仍然放在 `.env`，JSON 文件里只放渠道字段。
 - 字段含义、可选值、`allowedChannels` 对照表见公共文档：
   - [Merchant Quickstart 渠道配置](https://opencashier-docs.vercel.app/zh-CN/provider-config-reference#merchant-quickstart)
   - [allowedChannels 与渠道分组](https://opencashier-docs.vercel.app/zh-CN/provider-config-reference#allowedchannels-and-provider-groups)
@@ -87,7 +88,7 @@ pnpm dev:merchant-quickstart
 
 ## 什么时候还需要 `apps/web`
 
-- 你把 `allowedChannels` 改成 `alipay_qr`、`wechat_qr` 这类需要托管二维码页面的渠道。
+- 你把 `allowedChannels` 改成 `alipay_qr` 这类需要托管二维码页面的渠道。
 - 你想手动在 UI 里维护渠道配置，而不是让 quickstart 通过 admin API 自动写入。
 
 如果你更想走 UI 配置路径：
@@ -105,12 +106,9 @@ pnpm dev:merchant-quickstart
 - `src/config.ts`
 - `src/server.ts`
 - `src/client.ts`
-- `src/opencashier-client.ts`
 
 补充文件：
 
 - `.env.example`
 - `provider-config.example.json`
-- `src/signing.ts`
-- `src/notify-verify.ts`
 - `src/store.ts`

@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import type { OpenCashierOrder } from "./opencashier-client";
+import type { OpenCashierOrder } from "@opencashier/sdk";
 
 export type QuickstartOrder = {
   merchantOrderNo: string;

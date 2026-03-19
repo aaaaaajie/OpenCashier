@@ -123,6 +123,9 @@ importers:
 
   examples/merchant-quickstart:
     dependencies:
+      '@opencashier/sdk':
+        specifier: workspace:*
+        version: link:../../packages/sdk
       dotenv:
         specifier: ^17.2.3
         version: 17.2.3
@@ -133,6 +136,15 @@ importers:
       tsx:
         specifier: ^4.8.1
         version: 4.21.0
+      typescript:
+        specifier: ^5.8.3
+        version: 5.9.3
+
+  packages/sdk:
+    devDependencies:
+      '@types/node':
+        specifier: ^22.18.1
+        version: 22.19.15
       typescript:
         specifier: ^5.8.3
         version: 5.9.3

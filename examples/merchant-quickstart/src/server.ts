@@ -1,6 +1,12 @@
 import { randomBytes } from "node:crypto";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import {
+  OpenCashierApiError,
+  OpenCashierClient,
+  OpenCashierSignatureError,
+  type OpenCashierProviderSetupResult
+} from "@opencashier/sdk";
+import {
   renderCreateOrderFailedPage,
   renderHomePage,
   renderMissingOrderPage,
@@ -10,11 +16,8 @@ import {
   renderResultPage
 } from "./client";
 import { type QuickstartConfig } from "./config";
-import { OpenCashierApiError, OpenCashierClient } from "./opencashier-client";
-import { verifyPlatformNotify } from "./notify-verify";
 import { QuickstartStore } from "./store";
 
-// main.ts initializes these once before the HTTP server starts.
 let config!: QuickstartConfig;
 let store!: QuickstartStore;
 let opencashier!: OpenCashierClient;
@@ -28,20 +31,61 @@ const server = createServer(async (request, response) => {
   }
 });
 
-export function startServer(nextConfig: QuickstartConfig): void {
+export async function startServer(nextConfig: QuickstartConfig): Promise<void> {
   config = nextConfig;
   store = new QuickstartStore();
   opencashier = new OpenCashierClient({
-    apiBaseUrl: config.apiBaseUrl,
+    baseUrl: config.apiBaseUrl,
     appId: config.appId,
-    appSecret: config.appSecret
+    appSecret: config.appSecret,
+    ...(config.adminUsername && config.adminPassword
+      ? {
+          admin: {
+            username: config.adminUsername,
+            password: config.adminPassword
+          }
+        }
+      : {})
   });
+
+  await setupProviderConfig();
 
   server.listen(config.port, () => {
     console.log(`merchant-quickstart running at ${config.appBaseUrl}`);
     console.log(`OpenCashier API: ${config.apiBaseUrl}`);
     console.log(`Notify URL: ${config.notifyUrl}`);
   });
+}
+
+async function setupProviderConfig(): Promise<void> {
+  if (!config.providerSetup.enabled) {
+    console.log(
+      "Provider bootstrap skipped because OPENCASHIER_BOOTSTRAP_PROVIDER_CONFIG=0."
+    );
+    return;
+  }
+
+  if (!config.adminUsername || !config.adminPassword) {
+    throw new Error(
+      "Missing OPENCASHIER_ADMIN_USERNAME or OPENCASHIER_ADMIN_PASSWORD for admin API bootstrap."
+    );
+  }
+
+  const result = await opencashier.providers.setupProvider(
+    config.providerSetup.group,
+    config.providerSetup.config,
+    {
+      appId: config.appId,
+      tolerateValidationFailure: true
+    }
+  );
+  const sourceLabel = config.providerSetup.configFile
+    ? ` from ${config.providerSetup.configFile}`
+    : "";
+
+  console.log(
+    `Provider config ready for ${config.appId}/${config.providerSetup.group}${sourceLabel}: ${formatProviderSetupMessage(result)}`
+  );
 }
 
 async function routeRequest(
@@ -107,7 +151,7 @@ async function handleCheckout(response: ServerResponse): Promise<void> {
   };
 
   try {
-    const created = await opencashier.createOrder(createOrderInput);
+    const created = await opencashier.orders.create(createOrderInput);
 
     store.recordCreatedOrder({
       merchantOrderNo,
@@ -139,7 +183,9 @@ async function handleResultPage(
   let queryError: string | null = null;
 
   try {
-    const queriedOrder = await opencashier.getOrderByMerchantOrderNo(merchantOrderNo);
+    const queriedOrder = await opencashier.orders.getByMerchantOrderNo(
+      merchantOrderNo
+    );
     store.recordQueryResult(queriedOrder);
   } catch (error) {
     queryError = formatError(error);
@@ -157,44 +203,49 @@ async function handleNotify(
   const rawBody = await readRequestBody(request);
 
   if (
-    !verifyPlatformNotify({
-      headers: request.headers,
-      rawBody,
-      appSecret: config.appSecret
-    })
+    !rawBody
   ) {
-    response.writeHead(401, { "Content-Type": "text/plain; charset=utf-8" });
-    response.end("invalid signature");
+    response.writeHead(400, { "Content-Type": "text/plain; charset=utf-8" });
+    response.end("invalid payload");
     return;
   }
 
   try {
-    const payload = JSON.parse(rawBody) as Record<string, unknown>;
+    const payload = opencashier.notifications.verify<{
+      notifyId?: string;
+      eventType?: string;
+      platformOrderNo?: string;
+      merchantOrderNo?: string;
+      status?: string;
+      channel?: string;
+      paidTime?: string;
+      amount?: number;
+      paidAmount?: number;
+      currency?: string;
+    }>({
+      headers: request.headers,
+      rawBody
+    });
 
     store.recordNotify({
-      notifyId:
-        typeof payload.notifyId === "string" ? payload.notifyId : undefined,
-      eventType:
-        typeof payload.eventType === "string" ? payload.eventType : undefined,
-      platformOrderNo:
-        typeof payload.platformOrderNo === "string"
-          ? payload.platformOrderNo
-          : undefined,
-      merchantOrderNo:
-        typeof payload.merchantOrderNo === "string"
-          ? payload.merchantOrderNo
-          : undefined,
-      status: typeof payload.status === "string" ? payload.status : undefined,
-      channel: typeof payload.channel === "string" ? payload.channel : undefined,
-      paidTime:
-        typeof payload.paidTime === "string" ? payload.paidTime : undefined,
-      amount: typeof payload.amount === "number" ? payload.amount : undefined,
-      paidAmount:
-        typeof payload.paidAmount === "number" ? payload.paidAmount : undefined,
-      currency:
-        typeof payload.currency === "string" ? payload.currency : undefined
+      notifyId: payload.notifyId,
+      eventType: payload.eventType,
+      platformOrderNo: payload.platformOrderNo,
+      merchantOrderNo: payload.merchantOrderNo,
+      status: payload.status,
+      channel: payload.channel,
+      paidTime: payload.paidTime,
+      amount: payload.amount,
+      paidAmount: payload.paidAmount,
+      currency: payload.currency
     });
-  } catch {
+  } catch (error) {
+    if (error instanceof OpenCashierSignatureError) {
+      response.writeHead(401, { "Content-Type": "text/plain; charset=utf-8" });
+      response.end("invalid signature");
+      return;
+    }
+
     response.writeHead(400, { "Content-Type": "text/plain; charset=utf-8" });
     response.end("invalid payload");
     return;
@@ -257,4 +308,18 @@ function formatError(error: unknown): string {
   }
 
   return error instanceof Error ? error.message : String(error);
+}
+
+function formatProviderSetupMessage(
+  result: OpenCashierProviderSetupResult
+): string {
+  if (result.validationError) {
+    return `Validation probe failed, but the draft was activated for local checkout: ${result.validationError}`;
+  }
+
+  if (result.validation) {
+    return result.validation.message;
+  }
+
+  return "Provider config draft saved and activated.";
 }

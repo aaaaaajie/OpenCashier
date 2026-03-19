@@ -80,7 +80,7 @@ pnpm smoke:merchant
 
 ## Merchant Quickstart 示例
 
-如果你想先看一份可运行的商户侧参考实现，而不是直接起完整工作区，可以先试 [examples/merchant-quickstart/README.zh-CN.md](./examples/merchant-quickstart/README.zh-CN.md)。这个 example 把签名下单、跳转 `cashierUrl`、通知验签和结果页查单兜底放在了一个小应用里。
+如果你想先看一份可运行的商户侧参考实现，而不是直接起完整工作区，可以先试 [examples/merchant-quickstart/README.zh-CN.md](./examples/merchant-quickstart/README.zh-CN.md)。这个 example 把官方 Node SDK 下单、跳转 `cashierUrl`、通知验签和结果页查单兜底放在了一个小应用里。
 
 它现在也会通过 admin API 把渠道配置写到商户应用作用域里，所以默认的 `alipay_page` 示例不再要求先启动 `apps/web`。如果你想切到二维码类渠道，或者更喜欢在 UI 里手工配置渠道，再启动 `pnpm dev:web` 即可。
 
@@ -100,16 +100,17 @@ apps/
 examples/
   merchant-quickstart/  # 可运行的商户侧接入参考
 packages/
+  sdk/           # 商户 Node/TypeScript SDK
   shared/        # 共享类型和常量
   wechatpay-sdk  # 微信支付 SDK 封装
-docs/
+docs/            # 内部计划与说明
 skills/
 ```
 
 ## 文档
 
-- 镜像部署指南: [docs/deployment.md](./docs/deployment.md)
-- 商户接入指南: [docs/merchant-api-integration.md](./docs/merchant-api-integration.md)
+- 镜像部署指南: [opencashier-docs.vercel.app/zh-CN/deployment](https://opencashier-docs.vercel.app/zh-CN/deployment)
+- 商户接入指南: [opencashier-docs.vercel.app/zh-CN/merchant-api-integration](https://opencashier-docs.vercel.app/zh-CN/merchant-api-integration)
 - Merchant Quickstart 示例: [examples/merchant-quickstart/README.zh-CN.md](./examples/merchant-quickstart/README.zh-CN.md)
 
 当前深度文档仍以中文为主；如果你希望补英文文档或双语说明，欢迎直接发 PR。

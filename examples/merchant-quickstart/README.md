@@ -6,11 +6,11 @@ This is a minimal merchant-side integration example.
 
 The default path covers 5 actions:
 
-- sign merchant requests
+- use the official Node SDK to sign merchant requests
 - create an order and receive `cashierUrl`
 - verify merchant notifications from OpenCashier
 - query the order again on the result page
-- optionally prepare one app-scoped provider config before the server starts
+- optionally prepare one app-scoped provider config through the same SDK before the server starts
 
 It does not include refunds or a custom cashier UI.
 
@@ -34,6 +34,7 @@ cp examples/merchant-quickstart/.env.example examples/merchant-quickstart/.env
 
 - `.env` keeps the shortest runnable path.
 - `provider-config.example.json` is easier for multiline keys or certificates.
+- `OPENCASHIER_PROVIDER_GROUP` stays in `.env`; the JSON file only contains provider fields.
 - Field meanings, allowed values, and channel mapping live in public docs:
   - [Merchant Quickstart provider config](https://opencashier-docs.vercel.app/en/provider-config-reference#merchant-quickstart)
   - [allowedChannels and provider groups](https://opencashier-docs.vercel.app/en/provider-config-reference#allowedchannels-and-provider-groups)
@@ -87,7 +88,7 @@ The flow is:
 
 ## When `apps/web` is still needed
 
-- You switch `allowedChannels` to a QR-based channel such as `alipay_qr` or `wechat_qr`.
+- You switch `allowedChannels` to a QR-based channel such as `alipay_qr`.
 - You prefer managing provider config in the UI instead of letting quickstart provision it through the admin API.
 
 If you want the UI path instead:
@@ -105,12 +106,9 @@ Recommended reading order:
 - `src/config.ts`
 - `src/server.ts`
 - `src/client.ts`
-- `src/opencashier-client.ts`
 
 Supporting files:
 
 - `.env.example`
 - `provider-config.example.json`
-- `src/signing.ts`
-- `src/notify-verify.ts`
 - `src/store.ts`

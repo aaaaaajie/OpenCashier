@@ -38,9 +38,10 @@ export function renderHomePage(
         <p class="eyebrow">Merchant Integration</p>
         <h1>OpenCashier merchant quickstart</h1>
         <p>
-          Minimal merchant-side reference for OpenCashier. The default path signs one
-          create-order request, redirects to <code>cashierUrl</code>, accepts one async
-          notification, and queries order status on the result page.
+          Minimal merchant-side reference for OpenCashier. The default path uses the
+          official Node SDK for create-order requests, redirects to
+          <code>cashierUrl</code>, accepts one async notification, and queries order
+          status on the result page.
         </p>
         <ul class="checklist">
           <li>Single process, no separate frontend build</li>
@@ -73,7 +74,7 @@ export function renderHomePage(
         <article class="card stack">
           <h2>Request flow</h2>
           <ol class="flow-list">
-            <li>POST <code>/checkout</code> signs and sends a create-order request.</li>
+            <li>POST <code>/checkout</code> calls the SDK to send a create-order request.</li>
             <li>OpenCashier returns <code>cashierUrl</code>.</li>
             <li>The browser is redirected to the hosted cashier.</li>
             <li>OpenCashier calls <code>/notify/opencashier</code>.</li>

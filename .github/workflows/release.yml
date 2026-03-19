@@ -25,15 +25,14 @@ on:
         default: true
         type: boolean
 
-permissions:
-  contents: write
-
 concurrency:
   group: release-${{ inputs.target_ref }}
   cancel-in-progress: false
 
 jobs:
   release:
+    permissions:
+      contents: write
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -260,6 +259,9 @@ jobs:
     if: ${{ !inputs.dry_run }}
     needs: release
     uses: ./.github/workflows/publish-images.yml
+    permissions:
+      contents: read
+      packages: write
     with:
       tag: ${{ inputs.version }}
     secrets: inherit

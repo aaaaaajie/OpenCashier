@@ -7,6 +7,7 @@ import { AppModule } from "./app.module";
 import { HttpExceptionFilter } from "./common/filters/http-exception.filter";
 import { RequestContextInterceptor } from "./common/interceptors/request-context.interceptor";
 import { ResponseEnvelopeInterceptor } from "./common/interceptors/response-envelope.interceptor";
+import { APP_VERSION } from "./version";
 
 const ADMIN_SESSION_COOKIE_NAME = "opencashier_admin_session";
 const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "::1", "0.0.0.0"]);
@@ -37,7 +38,7 @@ async function bootstrap(): Promise<void> {
   const swaggerConfig = new DocumentBuilder()
     .setTitle("统一收银台 API")
     .setDescription("第一阶段 API 骨架，后续会逐步替换为真实支付逻辑。")
-    .setVersion("0.1.0")
+    .setVersion(APP_VERSION)
     .addBasicAuth(
       {
         type: "http",

@@ -8,6 +8,7 @@ const DRAFT_EN_PATH = path.join(ROOT, ".github/changelog/DRAFT.md");
 const DRAFT_ZH_PATH = path.join(ROOT, ".github/changelog/DRAFT.zh-CN.md");
 const CHANGELOG_EN_PATH = path.join(ROOT, "CHANGELOG.md");
 const CHANGELOG_ZH_PATH = path.join(ROOT, "CHANGELOG.zh-CN.md");
+const REPOSITORY = process.env.GITHUB_REPOSITORY ?? "aaaaaajie/OpenCashier";
 
 const CATEGORY_ORDER = ["Added", "Changed", "Fixed", "Removed", "Security"];
 const ZH_CATEGORY = {
@@ -256,6 +257,10 @@ function renderPublicFile({ header, sections, references }, language) {
   return `${lines.join("\n").trim()}\n`;
 }
 
+function buildCompareUrl(from, to) {
+  return `https://github.com/${REPOSITORY}/compare/${from}...${to}`;
+}
+
 function updateDraftFiles(fragments, mode) {
   const draftEn = renderDraft("en", fragments);
   const draftZh = renderDraft("zh-CN", fragments);
@@ -335,8 +340,8 @@ function runRelease(version, date) {
 
   enState.header = PUBLIC_EN_HEADER;
   zhState.header = PUBLIC_ZH_HEADER;
-  enState.references[version] = `https://github.com/aaaaaajie/OpenCashier/compare/${previousVersion}...${version}`;
-  zhState.references[version] = `https://github.com/aaaaaajie/OpenCashier/compare/${previousVersion}...${version}`;
+  enState.references[version] = buildCompareUrl(previousVersion, version);
+  zhState.references[version] = buildCompareUrl(previousVersion, version);
 
   fs.writeFileSync(CHANGELOG_EN_PATH, renderPublicFile(enState, "en"));
   fs.writeFileSync(CHANGELOG_ZH_PATH, renderPublicFile(zhState, "zh-CN"));
@@ -351,8 +356,28 @@ function runRelease(version, date) {
   console.log(`Released ${fragments.length} changelog fragment(s) into ${version}.`);
 }
 
+function runNotes(version, language = "en") {
+  if (!version) {
+    fail("Usage: node scripts/changelog.mjs notes <version> [en|zh-CN]");
+  }
+
+  if (language !== "en" && language !== "zh-CN") {
+    fail(`Unsupported language "${language}". Expected "en" or "zh-CN".`);
+  }
+
+  const changelogPath = language === "en" ? CHANGELOG_EN_PATH : CHANGELOG_ZH_PATH;
+  const state = parsePublicChangelog(fs.readFileSync(changelogPath, "utf8"), language);
+  const section = state.sections.find((entry) => entry.version === version);
+
+  if (!section) {
+    fail(`Could not find version ${version} in ${path.basename(changelogPath)}.`);
+  }
+
+  process.stdout.write(`${section.raw}\n`);
+}
+
 function main() {
-  const [command, ...args] = process.argv.slice(2);
+  const [command, ...args] = process.argv.slice(2).filter((arg) => arg !== "--");
 
   switch (command) {
     case "validate":
@@ -364,9 +389,12 @@ function main() {
     case "release":
       runRelease(args[0], args[1]);
       return;
+    case "notes":
+      runNotes(args[0], args[1]);
+      return;
     default:
       fail(
-        "Usage: node scripts/changelog.mjs <validate|draft|release> [options]"
+        "Usage: node scripts/changelog.mjs <validate|draft|release|notes> [options]"
       );
   }
 }

@@ -1,5 +1,6 @@
 import { Injectable } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
+import { APP_VERSION } from "../../version";
 
 @Injectable()
 export class HealthService {
@@ -10,7 +11,7 @@ export class HealthService {
       status: "ok",
       service: this.configService.get<string>("APP_NAME") ?? "OpenCashier",
       timestamp: new Date().toISOString(),
-      version: "0.1.0"
+      version: APP_VERSION
     };
   }
 }

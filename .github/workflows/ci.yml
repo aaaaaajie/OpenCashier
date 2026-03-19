@@ -1,0 +1,104 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: cashier
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - "5432:5432"
+        options: >-
+          --health-cmd "pg_isready -U postgres -d cashier"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/cashier?schema=public
+      APP_SECRET: local-dev-app-secret
+      PLATFORM_CONFIG_MASTER_KEY: local-dev-platform-config-master-key
+      APP_BASE_URL: http://127.0.0.1:3000
+      WEB_BASE_URL: http://127.0.0.1:5173
+      VITE_API_BASE_URL: http://127.0.0.1:3000/api/v1
+      ADMIN_USERNAME: admin
+      ADMIN_PASSWORD: local-dev-admin-password
+      ENABLE_DEMO_DATA: "1"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Check release version sync
+        run: pnpm release:version:check
+
+      - name: Validate changelog state
+        run: pnpm changelog:validate
+
+      - name: Typecheck workspace
+        run: pnpm typecheck
+
+      - name: Build workspace
+        run: pnpm build
+
+      - name: Generate Prisma client
+        run: pnpm prisma:generate
+
+      - name: Push Prisma schema
+        run: pnpm prisma:db:push
+
+      - name: Start API
+        run: |
+          pnpm --filter @opencashier/api start > /tmp/opencashier-api.log 2>&1 &
+          echo $! > /tmp/opencashier-api.pid
+
+      - name: Wait for API health
+        run: |
+          for _ in $(seq 1 30); do
+            if curl --silent --fail http://127.0.0.1:3000/api/v1/health > /dev/null; then
+              exit 0
+            fi
+            sleep 2
+          done
+
+          cat /tmp/opencashier-api.log
+          exit 1
+
+      - name: Run merchant smoke test
+        run: pnpm smoke:merchant
+
+      - name: Print API log on failure
+        if: failure()
+        run: cat /tmp/opencashier-api.log
+
+      - name: Stop API
+        if: always()
+        run: |
+          if [ -f /tmp/opencashier-api.pid ]; then
+            kill "$(cat /tmp/opencashier-api.pid)" || true
+          fi

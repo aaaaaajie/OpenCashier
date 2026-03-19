@@ -1,0 +1,257 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Release tag to publish, for example v0.2.0 or v0.2.0-beta.1
+        required: true
+        type: string
+      release_type:
+        description: Whether this release is prerelease or stable
+        required: true
+        type: choice
+        options:
+          - prerelease
+          - stable
+      target_ref:
+        description: Branch to release from
+        required: true
+        default: main
+        type: string
+      dry_run:
+        description: Run validation and generate release notes without pushing commits, tags, or releases
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ inputs.target_ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: cashier
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - "5432:5432"
+        options: >-
+          --health-cmd "pg_isready -U postgres -d cashier"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/cashier?schema=public
+      APP_SECRET: local-dev-app-secret
+      PLATFORM_CONFIG_MASTER_KEY: local-dev-platform-config-master-key
+      APP_BASE_URL: http://127.0.0.1:3000
+      WEB_BASE_URL: http://127.0.0.1:5173
+      VITE_API_BASE_URL: http://127.0.0.1:3000/api/v1
+      ADMIN_USERNAME: admin
+      ADMIN_PASSWORD: local-dev-admin-password
+      ENABLE_DEMO_DATA: "1"
+    steps:
+      - name: Checkout target ref
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.target_ref }}
+          fetch-depth: 0
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Validate release input
+        id: release_meta
+        run: |
+          version="${{ inputs.version }}"
+          release_type="${{ inputs.release_type }}"
+
+          if [[ ! "$version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-beta\.[0-9]+)?$ ]]; then
+            echo "Invalid version: $version" >&2
+            exit 1
+          fi
+
+          if [[ "$release_type" == "stable" && "$version" == *-* ]]; then
+            echo "Stable releases must use a non-prerelease version tag." >&2
+            exit 1
+          fi
+
+          if [[ "$release_type" == "prerelease" && ! "$version" =~ -beta\.[0-9]+$ ]]; then
+            echo "Prereleases must use the -beta.N suffix." >&2
+            exit 1
+          fi
+
+          if git ls-remote --exit-code --tags origin "refs/tags/$version" >/dev/null 2>&1; then
+            echo "Tag $version already exists on origin." >&2
+            exit 1
+          fi
+
+          echo "plain_version=${version#v}" >> "$GITHUB_OUTPUT"
+          echo "release_date=$(date -u +%F)" >> "$GITHUB_OUTPUT"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Validate changelog state
+        run: pnpm changelog:validate
+
+      - name: Typecheck workspace
+        run: pnpm typecheck
+
+      - name: Build workspace
+        run: pnpm build
+
+      - name: Generate Prisma client
+        run: pnpm prisma:generate
+
+      - name: Push Prisma schema
+        run: pnpm prisma:db:push
+
+      - name: Start API
+        run: |
+          pnpm --filter @opencashier/api start > /tmp/opencashier-api.log 2>&1 &
+          echo $! > /tmp/opencashier-api.pid
+
+      - name: Wait for API health
+        run: |
+          for _ in $(seq 1 30); do
+            if curl --silent --fail http://127.0.0.1:3000/api/v1/health > /dev/null; then
+              exit 0
+            fi
+            sleep 2
+          done
+
+          cat /tmp/opencashier-api.log
+          exit 1
+
+      - name: Run merchant smoke test
+        run: pnpm smoke:merchant
+
+      - name: Stop API after smoke test
+        if: always()
+        run: |
+          if [ -f /tmp/opencashier-api.pid ]; then
+            kill "$(cat /tmp/opencashier-api.pid)" || true
+          fi
+
+      - name: Print API log on failure
+        if: failure()
+        run: cat /tmp/opencashier-api.log
+
+      - name: Apply release metadata changes
+        run: |
+          pnpm release:version:sync -- "${{ steps.release_meta.outputs.plain_version }}"
+          pnpm changelog:release -- "${{ inputs.version }}" "${{ steps.release_meta.outputs.release_date }}"
+          pnpm release:version:check
+          pnpm changelog:validate
+
+      - name: Rebuild after release metadata changes
+        run: |
+          pnpm typecheck
+          pnpm build
+
+      - name: Generate release notes
+        run: pnpm release:notes -- "${{ inputs.version }}" > RELEASE_NOTES.md
+
+      - name: Upload generated release notes
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-notes-${{ inputs.version }}
+          path: RELEASE_NOTES.md
+          if-no-files-found: ignore
+
+      - name: Write release summary
+        if: always()
+        run: |
+          {
+            echo "## Release Summary"
+            echo
+            echo "- Version: \`${{ inputs.version }}\`"
+            echo "- Type: \`${{ inputs.release_type }}\`"
+            echo "- Target ref: \`${{ inputs.target_ref }}\`"
+            echo "- Dry run: \`${{ inputs.dry_run }}\`"
+            echo
+            echo "## Release Notes Preview"
+            echo
+            if [ -f RELEASE_NOTES.md ]; then
+              echo '```md'
+              cat RELEASE_NOTES.md
+              echo '```'
+            else
+              echo "Release notes were not generated because the workflow failed before the release note step."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Show dry run summary
+        if: ${{ inputs.dry_run }}
+        run: |
+          git status --short
+          printf '\n--- RELEASE NOTES ---\n'
+          cat RELEASE_NOTES.md
+
+      - name: Write recovery guidance
+        if: failure()
+        run: |
+          {
+            echo "## Recovery Guidance"
+            echo
+            echo "- If this failed before the push steps, fix the issue and rerun the workflow."
+            echo "- If the release commit or tag already exists on origin, do not rewrite it. Create or repair the GitHub Release from the existing tag."
+            echo "- If image publishing later fails, rerun the \`Publish Images\` workflow with the same tag."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Commit release changes
+        if: ${{ !inputs.dry_run }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A \
+            package.json \
+            apps/api/package.json \
+            apps/web/package.json \
+            examples/merchant-quickstart/package.json \
+            packages/sdk/package.json \
+            packages/shared/package.json \
+            packages/wechatpay-sdk/package.json \
+            apps/api/src/version.ts \
+            CHANGELOG.md \
+            CHANGELOG.zh-CN.md \
+            .github/changelog
+          git commit -m "chore(release): ${{ inputs.version }}"
+
+      - name: Create annotated tag
+        if: ${{ !inputs.dry_run }}
+        run: git tag -a "${{ inputs.version }}" -m "OpenCashier ${{ inputs.version }}"
+
+      - name: Push release commit and tag
+        if: ${{ !inputs.dry_run }}
+        run: |
+          git push origin HEAD:${{ inputs.target_ref }}
+          git push origin "${{ inputs.version }}"
+
+      - name: Create GitHub release
+        if: ${{ !inputs.dry_run }}
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.version }}
+          name: ${{ inputs.version }}
+          body_path: RELEASE_NOTES.md
+          prerelease: ${{ inputs.release_type == 'prerelease' }}

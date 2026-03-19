@@ -331,6 +331,7 @@ export class PaymentStoreService implements OnModuleInit {
 
     if (latestAttempt) {
       const closeResult = await this.paymentChannelRegistryService.closeOrder({
+        appId: order.appId,
         platformOrderNo,
         channel: latestAttempt.channel,
         channelRequestNo: latestAttempt.channelRequestNo,
@@ -499,7 +500,8 @@ export class PaymentStoreService implements OnModuleInit {
         }
 
         const channelCatalog = this.paymentChannelRegistryService.getCatalogByChannel(
-          order.successChannel
+          order.successChannel,
+          { appId: order.appId }
         );
 
         if (!channelCatalog?.enabled) {
@@ -554,6 +556,7 @@ export class PaymentStoreService implements OnModuleInit {
         };
       });
       const refundResult = await this.paymentChannelRegistryService.refundOrder({
+        appId: input.appId,
         platformOrderNo: input.platformOrderNo,
         platformRefundNo: preparedRefund.platformRefundNo,
         merchantRefundNo: input.merchantRefundNo,
@@ -815,6 +818,7 @@ export class PaymentStoreService implements OnModuleInit {
     }
 
     const queryResult = await this.paymentChannelRegistryService.queryOrder({
+      appId: order.appId,
       platformOrderNo: order.platformOrderNo,
       channel: latestAttempt.channel,
       channelRequestNo: latestAttempt.channelRequestNo,

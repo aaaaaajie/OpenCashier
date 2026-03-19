@@ -48,6 +48,18 @@ export class StripeChannelAdapter extends BasePaymentChannelAdapter {
     return this.channelProviderConfigService.hasStripeConfig();
   }
 
+  override buildNotifyUrl(appBaseUrl: string, appId?: string): string | undefined {
+    const baseUrl = appBaseUrl.replace(/\/$/, "");
+
+    if (!this.notifyPath) {
+      return undefined;
+    }
+
+    return appId
+      ? `${baseUrl}${this.notifyPath}/${encodeURIComponent(appId)}`
+      : `${baseUrl}${this.notifyPath}`;
+  }
+
   override async createSession(
     input: ChannelSessionPreviewInput
   ): Promise<ChannelSessionPreview> {
@@ -320,6 +332,7 @@ export class StripeChannelAdapter extends BasePaymentChannelAdapter {
   async verifyCheckoutNotify(input: {
     headers: Record<string, string | string[] | undefined>;
     body: string;
+    appId?: string;
   }): Promise<ProviderNotifyResult & { eventType: string }> {
     const signature = this.resolveSignature(input.headers);
 
@@ -329,7 +342,8 @@ export class StripeChannelAdapter extends BasePaymentChannelAdapter {
 
     const event = this.stripeClientService.constructWebhookEvent({
       body: input.body,
-      signature
+      signature,
+      appId: input.appId
     });
 
     if (!STRIPE_SUPPORTED_EVENTS.has(event.type)) {

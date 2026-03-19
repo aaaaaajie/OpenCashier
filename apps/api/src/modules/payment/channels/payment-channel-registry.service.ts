@@ -13,6 +13,7 @@ import {
   ProviderConfigValidationResult,
   StoredChannelAttempt
 } from "./payment-channel.types";
+import { PlatformConfigService } from "../platform-config.service";
 
 @Injectable()
 export class PaymentChannelRegistryService {
@@ -22,7 +23,8 @@ export class PaymentChannelRegistryService {
     wechatPayChannelAdapter: WechatPayChannelAdapter,
     alipayChannelAdapter: AlipayChannelAdapter,
     stripeChannelAdapter: StripeChannelAdapter,
-    paypalChannelAdapter: PaypalChannelAdapter
+    paypalChannelAdapter: PaypalChannelAdapter,
+    private readonly platformConfigService: PlatformConfigService
   ) {
     this.adapters = [
       wechatPayChannelAdapter,
@@ -62,18 +64,30 @@ export class PaymentChannelRegistryService {
     }
   }
 
-  getCatalogByChannel(channel: string) {
-    return this.findByChannel(channel)?.getCatalog();
-  }
-
-  buildNotifyUrl(channel: string, appBaseUrl: string): string | undefined {
+  getCatalogByChannel(channel: string, options?: { appId?: string }) {
     const adapter = this.findByChannel(channel);
 
-    if (!adapter?.notifyPath) {
+    if (!adapter) {
       return undefined;
     }
 
-    return `${appBaseUrl.replace(/\/$/, "")}${adapter.notifyPath}`;
+    return this.platformConfigService.runWithScope(options?.appId, () =>
+      adapter.getCatalog()
+    );
+  }
+
+  buildNotifyUrl(
+    channel: string,
+    appBaseUrl: string,
+    appId?: string
+  ): string | undefined {
+    const adapter = this.findByChannel(channel);
+
+    if (!adapter) {
+      return undefined;
+    }
+
+    return adapter.buildNotifyUrl(appBaseUrl, appId);
   }
 
   async createSession(input: ChannelSessionPreviewInput) {
@@ -83,7 +97,9 @@ export class PaymentChannelRegistryService {
       throw new BadRequestException(`unsupported channel: ${input.channel}`);
     }
 
-    return adapter.createSession(input);
+    return this.platformConfigService.runWithScope(input.appId, () =>
+      adapter.createSession(input)
+    );
   }
 
   async queryOrder(input: ChannelOrderQueryInput) {
@@ -93,7 +109,9 @@ export class PaymentChannelRegistryService {
       throw new BadRequestException(`unsupported channel: ${input.channel}`);
     }
 
-    return adapter.queryOrder(input);
+    return this.platformConfigService.runWithScope(input.appId, () =>
+      adapter.queryOrder(input)
+    );
   }
 
   async closeOrder(input: ChannelOrderCloseInput) {
@@ -103,7 +121,9 @@ export class PaymentChannelRegistryService {
       throw new BadRequestException(`unsupported channel: ${input.channel}`);
     }
 
-    return adapter.closeOrder(input);
+    return this.platformConfigService.runWithScope(input.appId, () =>
+      adapter.closeOrder(input)
+    );
   }
 
   async refundOrder(input: ChannelRefundInput) {
@@ -113,7 +133,9 @@ export class PaymentChannelRegistryService {
       throw new BadRequestException(`unsupported channel: ${input.channel}`);
     }
 
-    return adapter.refundOrder(input);
+    return this.platformConfigService.runWithScope(input.appId, () =>
+      adapter.refundOrder(input)
+    );
   }
 
   restoreSessionFromAttempt(input: StoredChannelAttempt) {
@@ -152,7 +174,8 @@ export class PaymentChannelRegistryService {
   }
 
   validateProviderConfig(
-    providerCode: PaymentProviderCode
+    providerCode: PaymentProviderCode,
+    options?: { appId?: string }
   ): Promise<ProviderConfigValidationResult> {
     const adapter = this.findByProviderCode(providerCode);
 
@@ -160,7 +183,9 @@ export class PaymentChannelRegistryService {
       throw new BadRequestException(`unsupported provider: ${providerCode}`);
     }
 
-    return adapter.validateConfig();
+    return this.platformConfigService.runWithScope(options?.appId, () =>
+      adapter.validateConfig()
+    );
   }
 
   private findByChannel(channel: string): BasePaymentChannelAdapter | undefined {

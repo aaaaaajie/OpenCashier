@@ -58,14 +58,37 @@ export class StripeClientService {
   constructWebhookEvent(input: {
     body: string;
     signature: string;
+    appId?: string;
   }): Stripe.Event {
-    const { webhookSecret } =
-      this.channelProviderConfigService.getStripeClientConfig();
+    const scopedConfig = input.appId
+      ? this.channelProviderConfigService.getStripeClientConfig()
+      : undefined;
+    const candidateConfigs = scopedConfig
+      ? [scopedConfig]
+      : this.channelProviderConfigService.listStripeClientConfigs();
+
+    let lastError: unknown;
+
+    for (const candidate of candidateConfigs) {
+      try {
+        return this.getClientBySecretKey(candidate.secretKey).webhooks.constructEvent(
+          input.body,
+          input.signature,
+          candidate.webhookSecret
+        );
+      } catch (error) {
+        lastError = error;
+      }
+    }
+
+    if (lastError instanceof Error) {
+      throw lastError;
+    }
 
     return this.getClient().webhooks.constructEvent(
       input.body,
       input.signature,
-      webhookSecret
+      this.channelProviderConfigService.getStripeClientConfig().webhookSecret
     );
   }
 
@@ -75,13 +98,17 @@ export class StripeClientService {
 
   private getClient(): Stripe {
     const clientConfig = this.channelProviderConfigService.getStripeClientConfig();
+    return this.getClientBySecretKey(clientConfig.secretKey);
+  }
+
+  private getClientBySecretKey(secretKey: string): Stripe {
     const cacheKey = createHash("sha256")
-      .update(JSON.stringify(clientConfig))
+      .update(secretKey)
       .digest("hex");
 
     if (!this.client || this.clientCacheKey !== cacheKey) {
       this.clientCacheKey = cacheKey;
-      this.client = new Stripe(clientConfig.secretKey, {
+      this.client = new Stripe(secretKey, {
         apiVersion: STRIPE_API_VERSION,
         maxNetworkRetries: 2,
         typescript: true

@@ -7,6 +7,7 @@ import { StripeChannelAdapter } from "../payment/channels/adapters/stripe-channe
 import { WechatPayChannelAdapter } from "../payment/channels/adapters/wechatpay-channel.adapter";
 import type { ProviderNotifyResult } from "../payment/channels/payment-channel.types";
 import { PaymentAttemptService } from "../payment/payment-attempt.service";
+import { PlatformConfigService } from "../payment/platform-config.service";
 import { PaymentStoreService } from "../payment/payment-store.service";
 
 const ALIPAY_NOTIFY_CHANNEL = "alipay_notify";
@@ -24,16 +25,25 @@ export class NotifyService {
     private readonly stripeChannelAdapter: StripeChannelAdapter,
     private readonly wechatPayChannelAdapter: WechatPayChannelAdapter,
     private readonly paymentStoreService: PaymentStoreService,
-    private readonly paymentAttemptService: PaymentAttemptService
+    private readonly paymentAttemptService: PaymentAttemptService,
+    private readonly platformConfigService: PlatformConfigService
   ) {}
 
-  async handleAlipayNotify(payload: Record<string, unknown>): Promise<"success"> {
+  async handleAlipayNotify(
+    payload: Record<string, unknown>,
+    appId?: string
+  ): Promise<"success"> {
     const channelEventId = this.resolveAlipayChannelEventId(payload);
+    const platformOrderNo = this.asOptionalString(
+      payload.out_trade_no ?? payload.outTradeNo
+    );
+    const scopedAppId =
+      this.asOptionalString(appId) ?? (await this.findOrderAppId(platformOrderNo));
     const eventLog = await this.upsertChannelEventLog({
       channel: ALIPAY_NOTIFY_CHANNEL,
       channelEventId,
       eventType: ALIPAY_NOTIFY_EVENT_TYPE,
-      resourceNo: this.asOptionalString(payload.out_trade_no ?? payload.outTradeNo),
+      resourceNo: platformOrderNo,
       rawPayload: payload as Prisma.InputJsonValue
     });
 
@@ -44,7 +54,9 @@ export class NotifyService {
     let event: ProviderNotifyResult;
 
     try {
-      event = await this.alipayChannelAdapter.verifyNotify(payload);
+      event = await this.platformConfigService.runWithScope(scopedAppId, () =>
+        this.alipayChannelAdapter.verifyNotify(payload)
+      );
     } catch (error) {
       await this.updateChannelEventLog(eventLog.id, {
         processedResult: {
@@ -138,6 +150,7 @@ export class NotifyService {
   async handleWechatPayNotify(input: {
     headers: Record<string, string | string[] | undefined>;
     body: string;
+    appId?: string;
   }): Promise<void> {
     const parsedBody = this.tryParseJson(input.body);
     const channelEventId = this.resolveWechatPayChannelEventId(parsedBody, input.body);
@@ -160,7 +173,9 @@ export class NotifyService {
     let event: ProviderNotifyResult & { eventType: string };
 
     try {
-      event = await this.wechatPayChannelAdapter.verifyPaymentNotify(input);
+      event = await this.platformConfigService.runWithScope(input.appId, () =>
+        this.wechatPayChannelAdapter.verifyPaymentNotify(input)
+      );
     } catch (error) {
       await this.updateChannelEventLog(eventLog.id, {
         processedResult: {
@@ -250,6 +265,7 @@ export class NotifyService {
   async handleStripeNotify(input: {
     headers: Record<string, string | string[] | undefined>;
     body: string;
+    appId?: string;
   }): Promise<void> {
     const parsedBody = this.tryParseJson(input.body);
     const channelEventId = this.resolveStripeChannelEventId(parsedBody, input.body);
@@ -271,7 +287,9 @@ export class NotifyService {
     let event: ProviderNotifyResult & { eventType: string };
 
     try {
-      event = await this.stripeChannelAdapter.verifyCheckoutNotify(input);
+      event = await this.platformConfigService.runWithScope(input.appId, () =>
+        this.stripeChannelAdapter.verifyCheckoutNotify(input)
+      );
     } catch (error) {
       await this.updateChannelEventLog(eventLog.id, {
         processedResult: {
@@ -464,6 +482,21 @@ export class NotifyService {
       event.channelTradeNo,
       ["stripe_checkout"]
     );
+  }
+
+  private async findOrderAppId(
+    platformOrderNo: string | undefined
+  ): Promise<string | undefined> {
+    if (!platformOrderNo) {
+      return undefined;
+    }
+
+    const order = await this.prismaService.payOrder.findUnique({
+      where: { platformOrderNo },
+      select: { appId: true }
+    });
+
+    return order?.appId;
   }
 
   private resolveAlipayChannelEventId(payload: Record<string, unknown>): string {

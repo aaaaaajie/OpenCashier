@@ -82,6 +82,8 @@ pnpm smoke:merchant
 
 如果你想先看一份可运行的商户侧参考实现，而不是直接起完整工作区，可以先试 [examples/merchant-quickstart/README.zh-CN.md](./examples/merchant-quickstart/README.zh-CN.md)。这个 example 把签名下单、跳转 `cashierUrl`、通知验签和结果页查单兜底放在了一个小应用里。
 
+它现在也会通过 admin API 把渠道配置写到商户应用作用域里，所以默认的 `alipay_page` 示例不再要求先启动 `apps/web`。如果你想切到二维码类渠道，或者更喜欢在 UI 里手工配置渠道，再启动 `pnpm dev:web` 即可。
+
 ```bash
 pnpm dev:api
 pnpm dev:merchant-quickstart

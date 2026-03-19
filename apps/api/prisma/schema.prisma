@@ -92,6 +92,7 @@ model MerchantApp {
   updatedAt         DateTime        @updatedAt @map("updated_at")
   orders            PayOrder[]
   refunds           RefundOrder[]
+  platformConfigs   PlatformConfig[]
   idempotencyRecords IdempotencyRecord[]
 
   @@map("merchant_app")
@@ -247,11 +248,14 @@ model OperationAuditLog {
 }
 
 model PlatformConfig {
-  id        String   @id @default(uuid()) @db.Uuid
-  key       String   @unique @map("config_key")
+  id        String      @id @default(uuid()) @db.Uuid
+  key       String      @unique @map("config_key")
+  appId     String?     @map("app_id")
+  app       MerchantApp? @relation(fields: [appId], references: [appId], onDelete: Cascade)
   value     Json
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  createdAt DateTime    @default(now()) @map("created_at")
+  updatedAt DateTime    @updatedAt @map("updated_at")
 
+  @@index([appId], map: "platform_config_app_id_idx")
   @@map("platform_config")
 }

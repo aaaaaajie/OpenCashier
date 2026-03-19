@@ -24,6 +24,7 @@ export interface PaymentChannelCatalogItem {
 }
 
 export interface ChannelSessionPreviewInput {
+  appId?: string;
   platformOrderNo: string;
   merchantOrderNo: string;
   amount: number;
@@ -52,6 +53,7 @@ export interface StoredChannelAttempt {
 }
 
 export interface ChannelOrderQueryInput {
+  appId?: string;
   platformOrderNo: string;
   channel: string;
   channelRequestNo?: string | null;
@@ -67,6 +69,7 @@ export interface ChannelOrderQueryResult {
 }
 
 export interface ChannelOrderCloseInput {
+  appId?: string;
   platformOrderNo: string;
   channel: string;
   channelRequestNo?: string | null;
@@ -81,6 +84,7 @@ export interface ChannelOrderCloseResult {
 }
 
 export interface ChannelRefundInput {
+  appId?: string;
   platformOrderNo: string;
   platformRefundNo: string;
   merchantRefundNo: string;

@@ -1,4 +1,12 @@
-import { BadRequestException, Body, Controller, Post, Req, Res } from "@nestjs/common";
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Param,
+  Post,
+  Req,
+  Res
+} from "@nestjs/common";
 import { ApiExcludeController } from "@nestjs/swagger";
 import type { Response } from "express";
 import type { RequestWithContext } from "../../common/interfaces/request-with-context.interface";
@@ -22,10 +30,58 @@ export class NotifyController {
     }
   }
 
+  @Post("alipay/:appId")
+  async handleScopedAlipayNotify(
+    @Param("appId") appId: string,
+    @Body() body: Record<string, unknown>,
+    @Res() response: Response
+  ) {
+    try {
+      await this.notifyService.handleAlipayNotify(body, appId);
+      response.type("text/plain").send("success");
+    } catch {
+      response.status(400).type("text/plain").send("failure");
+    }
+  }
+
   @Post("wechatpay")
   async handleWechatPayNotify(
     @Req() request: RequestWithContext,
     @Res() response: Response
+  ) {
+    return this.handleWechatPayNotifyInternal(request, response);
+  }
+
+  @Post("wechatpay/:appId")
+  async handleScopedWechatPayNotify(
+    @Param("appId") appId: string,
+    @Req() request: RequestWithContext,
+    @Res() response: Response
+  ) {
+    return this.handleWechatPayNotifyInternal(request, response, appId);
+  }
+
+  @Post("stripe")
+  async handleStripeNotify(
+    @Req() request: RequestWithContext,
+    @Res() response: Response
+  ) {
+    return this.handleStripeNotifyInternal(request, response);
+  }
+
+  @Post("stripe/:appId")
+  async handleScopedStripeNotify(
+    @Param("appId") appId: string,
+    @Req() request: RequestWithContext,
+    @Res() response: Response
+  ) {
+    return this.handleStripeNotifyInternal(request, response, appId);
+  }
+
+  private async handleWechatPayNotifyInternal(
+    request: RequestWithContext,
+    response: Response,
+    appId?: string
   ) {
     try {
       const rawBody = request.rawBody?.toString("utf8");
@@ -36,7 +92,8 @@ export class NotifyController {
 
       await this.notifyService.handleWechatPayNotify({
         headers: request.headers,
-        body: rawBody
+        body: rawBody,
+        appId
       });
       response.status(204).send();
     } catch (error) {
@@ -52,10 +109,10 @@ export class NotifyController {
     }
   }
 
-  @Post("stripe")
-  async handleStripeNotify(
-    @Req() request: RequestWithContext,
-    @Res() response: Response
+  private async handleStripeNotifyInternal(
+    request: RequestWithContext,
+    response: Response,
+    appId?: string
   ) {
     try {
       const rawBody = request.rawBody?.toString("utf8");
@@ -66,7 +123,8 @@ export class NotifyController {
 
       await this.notifyService.handleStripeNotify({
         headers: request.headers,
-        body: rawBody
+        body: rawBody,
+        appId
       });
       response.status(200).json({
         received: true

@@ -34,6 +34,10 @@ interface StripeProviderConfig {
   webhookSecret?: string;
 }
 
+export interface ResolvedStripeProviderConfig extends Required<StripeProviderConfig> {
+  appId?: string;
+}
+
 interface PaypalProviderConfig {
   clientId?: string;
   clientSecret?: string;
@@ -234,6 +238,22 @@ export class ChannelProviderConfigService {
       secretKey: config.secretKey!,
       webhookSecret: config.webhookSecret!
     };
+  }
+
+  listStripeClientConfigs(): ResolvedStripeProviderConfig[] {
+    const preferredAppId = this.platformConfigService.getCurrentScopeAppId();
+
+    return this.platformConfigService
+      .listResolvedActiveConfigGroups("stripe", { preferAppId: preferredAppId })
+      .map((record) => ({
+        ...(record.appId ? { appId: record.appId } : {}),
+        secretKey: record.value.STRIPE_SECRET_KEY,
+        webhookSecret: record.value.STRIPE_WEBHOOK_SECRET
+      }))
+      .filter(
+        (item): item is ResolvedStripeProviderConfig =>
+          Boolean(item.secretKey && item.webhookSecret)
+      );
   }
 
   hasPaypalConfig(): boolean {

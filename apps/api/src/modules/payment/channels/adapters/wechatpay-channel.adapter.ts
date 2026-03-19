@@ -46,6 +46,18 @@ export class WechatPayChannelAdapter extends BasePaymentChannelAdapter {
     return this.channelProviderConfigService.hasWechatPayConfig();
   }
 
+  override buildNotifyUrl(appBaseUrl: string, appId?: string): string | undefined {
+    const baseUrl = appBaseUrl.replace(/\/$/, "");
+
+    if (!this.notifyPath) {
+      return undefined;
+    }
+
+    return appId
+      ? `${baseUrl}${this.notifyPath}/${encodeURIComponent(appId)}`
+      : `${baseUrl}${this.notifyPath}`;
+  }
+
   override async createSession(
     input: ChannelSessionPreviewInput
   ): Promise<ChannelSessionPreview> {

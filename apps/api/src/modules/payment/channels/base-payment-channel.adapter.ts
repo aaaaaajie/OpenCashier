@@ -41,6 +41,14 @@ export abstract class BasePaymentChannelAdapter {
     };
   }
 
+  buildNotifyUrl(appBaseUrl: string, _appId?: string): string | undefined {
+    if (!this.notifyPath) {
+      return undefined;
+    }
+
+    return `${appBaseUrl.replace(/\/$/, "")}${this.notifyPath}`;
+  }
+
   async createSession(
     input: ChannelSessionPreviewInput
   ): Promise<ChannelSessionPreview> {

@@ -1,4 +1,12 @@
-import { Controller, Get, Param, Query, Req, Res } from "@nestjs/common";
+import {
+  Controller,
+  Get,
+  HttpException,
+  Param,
+  Query,
+  Req,
+  Res
+} from "@nestjs/common";
 import { ApiExcludeController } from "@nestjs/swagger";
 import type { Request, Response } from "express";
 import { SkipResponseEnvelope } from "../../common/decorators/skip-response-envelope.decorator";
@@ -19,14 +27,27 @@ export class HostedCashierController {
     @Res() response: Response,
     @Query("terminal") terminal?: string
   ) {
-    const resolvedTerminal = this.resolveTerminal(request, terminal);
-    const entry = await this.cashierService.resolveHostedCashierEntry(
-      cashierToken,
-      resolvedTerminal
-    );
+    try {
+      const resolvedTerminal = this.resolveTerminal(request, terminal);
+      const entry = await this.cashierService.resolveHostedCashierEntry(
+        cashierToken,
+        resolvedTerminal
+      );
 
-    response.setHeader("Cache-Control", "no-store");
-    response.redirect(302, entry.url);
+      response.setHeader("Cache-Control", "no-store");
+      response.redirect(302, entry.url);
+    } catch (error) {
+      if (error instanceof HttpException) {
+        response.setHeader("Cache-Control", "no-store");
+        response
+          .status(error.getStatus())
+          .type("text/plain; charset=utf-8")
+          .send(error.message);
+        return;
+      }
+
+      throw error;
+    }
   }
 
   private resolveTerminal(

@@ -75,6 +75,8 @@ For environment setup, local tunnel usage, default endpoints, seeded demo data, 
 
 If you want a runnable merchant-side reference instead of the full workspace, try [examples/merchant-quickstart/README.md](./examples/merchant-quickstart/README.md). It shows signed create-order requests, `cashierUrl` redirect, notification verification, and result-page query fallback in one small app.
 
+It can now provision provider config into the merchant app scope through the admin API, so the default `alipay_page` path no longer requires `apps/web` up front. Start `pnpm dev:web` only if you switch to QR-based channels or prefer managing providers in the UI.
+
 ```bash
 pnpm dev:api
 pnpm dev:merchant-quickstart

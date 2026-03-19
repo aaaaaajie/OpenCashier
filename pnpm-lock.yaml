@@ -122,6 +122,10 @@ importers:
         version: 7.3.1(@types/node@22.19.15)(jiti@2.6.1)(terser@5.46.0)(tsx@4.21.0)
 
   examples/merchant-quickstart:
+    dependencies:
+      dotenv:
+        specifier: ^17.2.3
+        version: 17.2.3
     devDependencies:
       '@types/node':
         specifier: ^22.18.1

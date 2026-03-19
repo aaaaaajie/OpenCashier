@@ -1,5 +1,9 @@
 import { PayAttemptStatus, type PayAttempt } from "@prisma/client";
-import { Injectable, NotFoundException } from "@nestjs/common";
+import {
+  Injectable,
+  NotFoundException,
+  ServiceUnavailableException
+} from "@nestjs/common";
 import { parseCashierToken } from "../../common/utils/cashier-token.util";
 import {
   type AlipayProductCapability,
@@ -107,6 +111,12 @@ export class CashierService {
       };
     }
 
+    if (providerCount === 1 && preferredChannel && preferredChannel.sessionStatus !== "READY") {
+      throw new ServiceUnavailableException(
+        preferredChannel.note || `${preferredChannel.displayName} 当前不可用`
+      );
+    }
+
     return {
       action: "WEB",
       url: this.buildCashierWebUrl(cashierToken)
@@ -115,13 +125,14 @@ export class CashierService {
 
   private resolveProviderNotifyUrl(
     channel: string,
-    fallbackNotifyUrl: string
+    fallbackNotifyUrl: string,
+    appId?: string
   ): string {
     const appBaseUrl =
       this.platformConfigService.get("APP_BASE_URL") ?? "http://localhost:3000";
 
     return (
-      this.paymentChannelRegistryService.buildNotifyUrl(channel, appBaseUrl) ??
+      this.paymentChannelRegistryService.buildNotifyUrl(channel, appBaseUrl, appId) ??
       fallbackNotifyUrl
     );
   }
@@ -227,9 +238,9 @@ export class CashierService {
       allowedChannels,
       terminal
     );
-    const candidateChannels = this.resolveAlipayCandidateChannels(
-      allowedChannels,
-      terminal
+    const candidateChannels = await this.platformConfigService.runWithScope(
+      order.appId,
+      async () => this.resolveAlipayCandidateChannels(allowedChannels, terminal)
     );
     const fallbackChannel =
       requestedChannels[0] ??
@@ -239,7 +250,9 @@ export class CashierService {
     if (candidateChannels.length === 0) {
       return this.paymentChannelRegistryService.createFailedSession(
         { channel: fallbackChannel },
-        this.buildAlipayCapabilityMismatchReason(requestedChannels)
+        await this.platformConfigService.runWithScope(order.appId, async () =>
+          this.buildAlipayCapabilityMismatchReason(requestedChannels)
+        )
       );
     }
 
@@ -280,7 +293,9 @@ export class CashierService {
     channel: string,
     latestAttempts: PayAttempt[]
   ) {
-    const catalog = this.paymentChannelRegistryService.getCatalogByChannel(channel);
+    const catalog = this.paymentChannelRegistryService.getCatalogByChannel(channel, {
+      appId: order.appId
+    });
 
     if (!catalog?.enabled) {
       return this.paymentChannelRegistryService.createUnavailableSession({
@@ -303,13 +318,18 @@ export class CashierService {
 
     try {
       const session = await this.paymentChannelRegistryService.createSession({
+        appId: order.appId,
         platformOrderNo: order.platformOrderNo,
         merchantOrderNo: order.merchantOrderNo,
         amount: order.amount,
         currency: order.currency,
         subject: order.subject,
         description: order.description,
-        notifyUrl: this.resolveProviderNotifyUrl(channel, order.notifyUrl),
+        notifyUrl: this.resolveProviderNotifyUrl(
+          channel,
+          order.notifyUrl,
+          order.appId
+        ),
         returnUrl: this.resolveChannelReturnUrl(order, channel, "success"),
         cancelUrl: this.resolveChannelReturnUrl(order, channel, "cancel"),
         expireTime: order.expireTime,
@@ -506,8 +526,10 @@ export class CashierService {
     channels: Array<{
       providerCode?: string;
       channel: string;
+      displayName: string;
       sessionStatus: string;
       actionType: string;
+      note: string;
       payUrl?: string;
     }>,
     terminal: CashierTerminal

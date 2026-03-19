@@ -168,7 +168,7 @@ jobs:
           pnpm build
 
       - name: Generate release notes
-        run: pnpm release:notes -- "${{ inputs.version }}" > RELEASE_NOTES.md
+        run: node scripts/release-notes.mjs "${{ inputs.version }}" > RELEASE_NOTES.md
 
       - name: Upload generated release notes
         if: always()
@@ -255,3 +255,11 @@ jobs:
           name: ${{ inputs.version }}
           body_path: RELEASE_NOTES.md
           prerelease: ${{ inputs.release_type == 'prerelease' }}
+
+  publish-images:
+    if: ${{ !inputs.dry_run }}
+    needs: release
+    uses: ./.github/workflows/publish-images.yml
+    with:
+      tag: ${{ inputs.version }}
+    secrets: inherit

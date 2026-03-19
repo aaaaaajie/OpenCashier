@@ -1,6 +1,12 @@
 name: Publish Images
 
 on:
+  workflow_call:
+    inputs:
+      tag:
+        description: Release tag to publish images for
+        required: true
+        type: string
   push:
     tags:
       - "v*"
@@ -35,7 +41,7 @@ jobs:
       - name: Resolve release tag
         id: release_tag
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] || [ "${{ github.event_name }}" = "workflow_call" ]; then
             tag="${{ inputs.tag }}"
           else
             tag="${GITHUB_REF_NAME}"

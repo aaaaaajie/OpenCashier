@@ -8,6 +8,18 @@ History that predates changelog adoption is backfilled at the public tag level. 
 
 Chinese version: [CHANGELOG.zh-CN.md](./CHANGELOG.zh-CN.md)
 
+## [v0.2.0-beta.1] - 2026-03-19
+
+### Added
+- Added admin login and session APIs plus a sign-in flow in `apps/web`, with configurable local development credentials.
+- Added `examples/merchant-quickstart`, a runnable merchant integration sample that provisions app-scoped provider config, redirects to `cashierUrl`, verifies notifications, and rechecks order status on the result page.
+- Added the workspace package `@opencashier/sdk` for Node and TypeScript merchant integrations, covering HMAC request signing, order and refund resources, provider config bootstrap, and notification verification.
+
+### Changed
+- Merchant provider configuration can now be managed per app, which removes the need to start `apps/web` for the default `alipay_page` quickstart path.
+- The default deployment stack now uses the internal PostgreSQL alias `opencashier-postgres` when the bundled database service is enabled.
+- Repository README files now point deployment and merchant integration guides to the public documentation site instead of keeping long copies in the main repo.
+
 ## [v0.1.0-beta.4] - 2026-03-17
 
 ### Added
@@ -46,6 +58,7 @@ Chinese version: [CHANGELOG.zh-CN.md](./CHANGELOG.zh-CN.md)
 - Switched the web app to runtime API base URL injection so image deployments can change API endpoints without rebuilding frontend assets.
 - Documented the initial channel availability baseline: Alipay and Stripe available, WeChat Pay in testing, and PayPal reserved but not yet open.
 
+[v0.2.0-beta.1]: https://github.com/aaaaaajie/OpenCashier/compare/v0.1.0-beta.4...v0.2.0-beta.1
 [v0.1.0-beta.4]: https://github.com/aaaaaajie/OpenCashier/compare/v0.1.0-beta.3...v0.1.0-beta.4
 [v0.1.0-beta.3]: https://github.com/aaaaaajie/OpenCashier/compare/v0.1.0-beta.2...v0.1.0-beta.3
 [v0.1.0-beta.2]: https://github.com/aaaaaajie/OpenCashier/compare/v0.1.0-beta.1...v0.1.0-beta.2

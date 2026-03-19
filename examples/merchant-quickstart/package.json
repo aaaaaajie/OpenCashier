@@ -1,6 +1,6 @@
 {
   "name": "@opencashier/merchant-quickstart",
-  "version": "0.1.0",
+  "version": "0.2.0-beta.1",
   "private": true,
   "scripts": {
     "dev": "pnpm --filter @opencashier/sdk build && tsx watch src/main.ts",

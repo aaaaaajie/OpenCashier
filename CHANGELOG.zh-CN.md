@@ -8,6 +8,18 @@
 
 English version: [CHANGELOG.md](./CHANGELOG.md)
 
+## [v0.2.0-beta.1] - 2026-03-19
+
+### 新增
+- 新增管理员登录与会话 API，并在 `apps/web` 中接入登录流程，支持可配置的本地开发账号。
+- 新增 `examples/merchant-quickstart`，提供可运行的商户接入示例，覆盖 app 作用域渠道配置初始化、跳转 `cashierUrl`、通知验签以及结果页查单兜底。
+- 新增工作区包 `@opencashier/sdk`，用于 Node 和 TypeScript 商户接入，覆盖 HMAC 请求签名、订单与退款资源、渠道配置初始化以及通知验签。
+
+### 变更
+- 商户渠道配置现在支持按 app 维度管理，默认 `alipay_page` quickstart 路径不再要求先启动 `apps/web`。
+- 默认部署栈在启用内置数据库服务时，改为使用内部 PostgreSQL 别名 `opencashier-postgres`。
+- 仓库 README 现已将部署与商户接入指南指向公开文档站，不再在主仓库中保留长篇副本。
+
 ## [v0.1.0-beta.4] - 2026-03-17
 
 ### 新增
@@ -46,6 +58,7 @@ English version: [CHANGELOG.md](./CHANGELOG.md)
 - Web 应用改为运行时注入 API 基础地址，使镜像部署可以在不重新构建前端资源的情况下切换 API 地址。
 - 明确首个公开版本的渠道可用性基线：支付宝与 Stripe 可用，微信支付测试中，PayPal 预留但尚未开放。
 
+[v0.2.0-beta.1]: https://github.com/aaaaaajie/OpenCashier/compare/v0.1.0-beta.4...v0.2.0-beta.1
 [v0.1.0-beta.4]: https://github.com/aaaaaajie/OpenCashier/compare/v0.1.0-beta.3...v0.1.0-beta.4
 [v0.1.0-beta.3]: https://github.com/aaaaaajie/OpenCashier/compare/v0.1.0-beta.2...v0.1.0-beta.3
 [v0.1.0-beta.2]: https://github.com/aaaaaajie/OpenCashier/compare/v0.1.0-beta.1...v0.1.0-beta.2

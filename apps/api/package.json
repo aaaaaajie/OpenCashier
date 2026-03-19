@@ -7,11 +7,12 @@
     "prisma"
   ],
   "scripts": {
-    "predev": "pnpm --filter @opencashier/wechatpay-sdk build",
+    "prepare:runtime": "pnpm prisma:generate && pnpm --filter @opencashier/wechatpay-sdk build",
+    "predev": "pnpm prepare:runtime",
     "dev": "nest start --watch",
-    "prebuild": "pnpm --filter @opencashier/wechatpay-sdk build",
+    "prebuild": "pnpm prepare:runtime",
     "build": "nest build",
-    "pretypecheck": "pnpm --filter @opencashier/wechatpay-sdk build",
+    "pretypecheck": "pnpm prepare:runtime",
     "start": "node dist/main.js",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "prisma:generate": "sh -lc 'if [ -f ../../.env ]; then set -a && . ../../.env && set +a; fi; pnpm exec prisma generate --schema prisma/schema.prisma'",

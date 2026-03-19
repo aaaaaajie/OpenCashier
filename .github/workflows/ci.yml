@@ -60,14 +60,14 @@ jobs:
       - name: Validate changelog state
         run: pnpm changelog:validate
 
+      - name: Generate Prisma client
+        run: pnpm prisma:generate
+
       - name: Typecheck workspace
         run: pnpm typecheck
 
       - name: Build workspace
         run: pnpm build
-
-      - name: Generate Prisma client
-        run: pnpm prisma:generate
 
       - name: Push Prisma schema
         run: pnpm prisma:db:push

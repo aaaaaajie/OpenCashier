@@ -75,6 +75,8 @@ For environment setup, local tunnel usage, default endpoints, seeded demo data, 
 
 If you want a runnable merchant-side reference instead of the full workspace, try [examples/merchant-quickstart/README.md](./examples/merchant-quickstart/README.md). It shows the Node SDK path for create-order requests, `cashierUrl` redirect, notification verification, and result-page query fallback in one small app.
 
+If you only need the merchant SDK in your own service, use the npm package path for `@opencashier/sdk` once the target version is published, and start with the Node SDK guide instead of cloning this monorepo.
+
 It can now provision provider config into the merchant app scope through the admin API, so the default `alipay_page` path no longer requires `apps/web` up front. Start `pnpm dev:web` only if you switch to QR-based channels or prefer managing providers in the UI.
 
 ```bash
@@ -105,6 +107,7 @@ skills/
 - Changelog: [CHANGELOG.md](./CHANGELOG.md)
 - Changelog (Simplified Chinese): [CHANGELOG.zh-CN.md](./CHANGELOG.zh-CN.md)
 - Deployment guide: [opencashier-docs.vercel.app/en/deployment](https://opencashier-docs.vercel.app/en/deployment)
+- Node SDK guide: [opencashier-docs.vercel.app/en/node-sdk](https://opencashier-docs.vercel.app/en/node-sdk)
 - Merchant integration guide: [opencashier-docs.vercel.app/en/merchant-api-integration](https://opencashier-docs.vercel.app/en/merchant-api-integration)
 - Merchant quickstart example: [examples/merchant-quickstart/README.md](./examples/merchant-quickstart/README.md)
 

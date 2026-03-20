@@ -1,0 +1,15 @@
+{
+  "title": "sdk-npm-publish",
+  "entries": [
+    {
+      "category": "Added",
+      "en": "Prepared `@opencashier/sdk` for direct npm distribution with publish metadata, a package README and LICENSE, a packaged-consumer smoke test, and a manual GitHub workflow for npm publishing.",
+      "zh-CN": "为 `@opencashier/sdk` 补齐了直接发布到 npm 所需的基础设施，包括可发布的包元数据、包内 README 与 LICENSE、打包后消费者 smoke test，以及手动触发的 GitHub npm 发布 workflow。"
+    },
+    {
+      "category": "Changed",
+      "en": "Updated the repo and public SDK docs to use npm installation as the default external developer path instead of requiring developers to build the SDK tarball from the monorepo first.",
+      "zh-CN": "更新了仓库与对外 SDK 文档，把 npm 安装改成外部开发者的默认路径，不再要求开发者先从 monorepo 构建 SDK tarball。"
+    }
+  ]
+}

@@ -1,15 +1,50 @@
 {
   "name": "@opencashier/sdk",
   "version": "0.2.0-beta.1",
-  "private": true,
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
+  "description": "Official Node.js SDK for the OpenCashier Merchant API.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/aaaaaajie/OpenCashier.git",
+    "directory": "packages/sdk"
+  },
+  "homepage": "https://opencashier-docs.vercel.app/en/node-sdk",
+  "bugs": {
+    "url": "https://github.com/aaaaaajie/OpenCashier/issues"
+  },
+  "keywords": [
+    "opencashier",
+    "payments",
+    "checkout",
+    "merchant-api",
+    "sdk",
+    "node"
+  ],
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "require": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
+  "sideEffects": false,
+  "engines": {
+    "node": ">=18"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "files": [
-    "dist"
+    "dist",
+    "README.md",
+    "LICENSE"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "typecheck": "tsc --noEmit -p tsconfig.json"
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "prepack": "pnpm build"
   },
   "devDependencies": {
     "@types/node": "^22.18.1",

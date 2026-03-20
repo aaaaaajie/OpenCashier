@@ -1,0 +1,101 @@
+name: Publish SDK
+
+on:
+  workflow_dispatch:
+    inputs:
+      npm_tag:
+        description: npm dist-tag to publish with, for example next or latest
+        required: true
+        default: next
+        type: string
+      dry_run:
+        description: Validate, pack, and smoke test without publishing to npm
+        required: true
+        default: true
+        type: boolean
+
+concurrency:
+  group: publish-sdk
+  cancel-in-progress: false
+
+jobs:
+  publish-sdk:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+          registry-url: https://registry.npmjs.org
+
+      - name: Resolve SDK version
+        id: sdk_meta
+        run: |
+          version=$(node -p "require('./packages/sdk/package.json').version")
+          name=$(node -p "require('./packages/sdk/package.json').name")
+
+          if npm view "${name}@${version}" version >/dev/null 2>&1; then
+            echo "Package ${name}@${version} already exists on npm." >&2
+            exit 1
+          fi
+
+          echo "name=${name}" >> "$GITHUB_OUTPUT"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Check release version sync
+        run: pnpm release:version:check
+
+      - name: Validate changelog state
+        run: pnpm changelog:validate
+
+      - name: Typecheck SDK and quickstart
+        run: |
+          pnpm --filter @opencashier/sdk typecheck
+          pnpm --filter @opencashier/merchant-quickstart typecheck
+
+      - name: Build SDK
+        run: pnpm --filter @opencashier/sdk build
+
+      - name: Smoke test packaged SDK
+        run: pnpm sdk:pack:smoke
+
+      - name: Dry-run npm publish
+        if: ${{ inputs.dry_run }}
+        run: |
+          cd packages/sdk
+          npm publish --dry-run --tag "${{ inputs.npm_tag }}"
+
+      - name: Publish npm package
+        if: ${{ !inputs.dry_run }}
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          cd packages/sdk
+          npm publish --provenance --tag "${{ inputs.npm_tag }}"
+
+      - name: Write summary
+        if: always()
+        run: |
+          {
+            echo "## SDK Publish"
+            echo
+            echo "- Package: \`${{ steps.sdk_meta.outputs.name }}\`"
+            echo "- Version: \`${{ steps.sdk_meta.outputs.version }}\`"
+            echo "- npm tag: \`${{ inputs.npm_tag }}\`"
+            echo "- Dry run: \`${{ inputs.dry_run }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"

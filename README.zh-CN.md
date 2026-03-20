@@ -82,6 +82,8 @@ pnpm smoke:merchant
 
 如果你想先看一份可运行的商户侧参考实现，而不是直接起完整工作区，可以先试 [examples/merchant-quickstart/README.zh-CN.md](./examples/merchant-quickstart/README.zh-CN.md)。这个 example 把官方 Node SDK 下单、跳转 `cashierUrl`、通知验签和结果页查单兜底放在了一个小应用里。
 
+如果你只是想在自己的商户服务里接入 SDK，优先走 `@opencashier/sdk` 的 npm 安装路径；在目标版本已经发布后，就不需要先克隆这个 monorepo。
+
 它现在也会通过 admin API 把渠道配置写到商户应用作用域里，所以默认的 `alipay_page` 示例不再要求先启动 `apps/web`。如果你想切到二维码类渠道，或者更喜欢在 UI 里手工配置渠道，再启动 `pnpm dev:web` 即可。
 
 ```bash
@@ -112,6 +114,7 @@ skills/
 - 变更记录: [CHANGELOG.zh-CN.md](./CHANGELOG.zh-CN.md)
 - ChangeLog 英文版: [CHANGELOG.md](./CHANGELOG.md)
 - 镜像部署指南: [opencashier-docs.vercel.app/zh-CN/deployment](https://opencashier-docs.vercel.app/zh-CN/deployment)
+- Node SDK 接入指南: [opencashier-docs.vercel.app/zh-CN/node-sdk](https://opencashier-docs.vercel.app/zh-CN/node-sdk)
 - 商户接入指南: [opencashier-docs.vercel.app/zh-CN/merchant-api-integration](https://opencashier-docs.vercel.app/zh-CN/merchant-api-integration)
 - Merchant Quickstart 示例: [examples/merchant-quickstart/README.zh-CN.md](./examples/merchant-quickstart/README.zh-CN.md)
 

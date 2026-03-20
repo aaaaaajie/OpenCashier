@@ -9,6 +9,8 @@
     "dev:merchant-quickstart": "pnpm --filter @opencashier/merchant-quickstart dev",
     "dev:web": "pnpm --filter @opencashier/web dev",
     "sdk:pack:smoke": "node scripts/sdk-package-smoke.mjs",
+    "sdk:publish:first:dry-run": "node scripts/sdk-bootstrap-publish.mjs --dry-run",
+    "sdk:publish:first": "node scripts/sdk-bootstrap-publish.mjs",
     "build": "pnpm release:version:check && pnpm -r build",
     "typecheck": "pnpm release:version:check && pnpm -r typecheck",
     "test:tunnel": "node --test scripts/alipay-callback-tunnel.test.mjs",

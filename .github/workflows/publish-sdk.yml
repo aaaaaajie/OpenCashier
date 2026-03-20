@@ -36,9 +36,14 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
           cache: pnpm
           registry-url: https://registry.npmjs.org
+
+      - name: Ensure npm trusted publishing support
+        run: |
+          npm install -g npm@^11.5.1
+          npm --version
 
       - name: Resolve SDK version
         id: sdk_meta
@@ -80,13 +85,24 @@ jobs:
           cd packages/sdk
           npm publish --dry-run --tag "${{ inputs.npm_tag }}"
 
-      - name: Publish npm package
+      - name: Publish npm package with trusted publishing
         if: ${{ !inputs.dry_run }}
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           cd packages/sdk
-          npm publish --provenance --tag "${{ inputs.npm_tag }}"
+          npm publish --tag "${{ inputs.npm_tag }}"
+
+      - name: Write trusted publishing guidance
+        if: failure()
+        run: |
+          {
+            echo "## Trusted Publishing Checks"
+            echo
+            echo "- Confirm npm trusted publisher is configured for package \`@opencashier/sdk\`."
+            echo "- Confirm repository is \`aaaaaajie/OpenCashier\`."
+            echo "- Confirm workflow filename is \`publish-sdk.yml\`."
+            echo "- Confirm no GitHub environment name is configured on npm for this publisher."
+            echo "- Confirm this job is running on a GitHub-hosted runner."
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Write summary
         if: always()
@@ -98,4 +114,5 @@ jobs:
             echo "- Version: \`${{ steps.sdk_meta.outputs.version }}\`"
             echo "- npm tag: \`${{ inputs.npm_tag }}\`"
             echo "- Dry run: \`${{ inputs.dry_run }}\`"
+            echo "- Auth: \`OIDC trusted publishing\`"
           } >> "$GITHUB_STEP_SUMMARY"

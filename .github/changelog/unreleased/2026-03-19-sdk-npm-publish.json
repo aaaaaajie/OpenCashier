@@ -3,8 +3,8 @@
   "entries": [
     {
       "category": "Added",
-      "en": "Prepared `@opencashier/sdk` for direct npm distribution with publish metadata, a package README and LICENSE, a packaged-consumer smoke test, and a manual GitHub workflow for npm publishing.",
-      "zh-CN": "为 `@opencashier/sdk` 补齐了直接发布到 npm 所需的基础设施，包括可发布的包元数据、包内 README 与 LICENSE、打包后消费者 smoke test，以及手动触发的 GitHub npm 发布 workflow。"
+      "en": "Prepared `@opencashier/sdk` for direct npm distribution with publish metadata, a package README and LICENSE, a packaged-consumer smoke test, and a manual GitHub workflow that uses npm OIDC trusted publishing instead of a long-lived write token.",
+      "zh-CN": "为 `@opencashier/sdk` 补齐了直接发布到 npm 所需的基础设施，包括可发布的包元数据、包内 README 与 LICENSE、打包后消费者 smoke test，以及一条使用 npm OIDC trusted publishing 的手动 GitHub 发布 workflow，不再依赖长期写权限 token。"
     },
     {
       "category": "Changed",
